@@ -1,0 +1,7 @@
+anthropic
+certifi
+httpx
+motor
+pydantic
+python-dotenv
+uagents
