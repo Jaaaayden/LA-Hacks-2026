@@ -6,113 +6,119 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A buyer-side AI agent for hobbyists. The user types a natural-language intent like *"I want to get into snowboarding, budget $300, in LA"*, and the agent returns a curated kit of real secondhand listings within budget.
 
-LA Hacks 2026 hackathon project. Originally planned around Fetch.ai's Agentverse / uAgents (see "Open decisions" — that part is no longer locked in now that there's a separate `frontend/` and `backend/` split).
+LA Hacks 2026 hackathon project.
 
 ## Repo layout
 
 ```
-backend/
+backend/                       # Python backend (services + LLM prompts)
+  __init__.py                  # calls load_dotenv() on import
   prompts/
-    intent_parser.txt            # system prompt for the intent parser (plain text, hand-edited)
+    intent_parser.txt          # system prompt for the intent parser
+    followup.txt               # empty stub from teammate
   services/
-    intent_parser.py             # ParsedIntent schema + parse_intent() — calls Claude via messages.parse()
-    followup.service.js          # ⚠️ JS file from teammate's commit — needs alignment, see below
-  prompts/
-    followup.txt                 # empty stub from teammate's commit
-frontend/                        # Vite + React (teammate)
-  src/App.jsx, ...
-tests/
-  test_parser.py                 # 1 schema test + 6 integration tests for parse_intent
-.env                             # ANTHROPIC_API_KEY (gitignored)
-.env.example                     # template
-pyproject.toml                   # Python deps + pytest config
-```
+    intent_parser.py           # parse_intent(query) -> ParsedIntent (Claude Haiku 4.5)
+    query.py                   # record_query(text) -> (ParsedIntent, query_id) — parser + db bridge
+    followup.service.js        # ⚠️ JS file from teammate; backend language is unresolved
 
-**`backend/__init__.py` calls `load_dotenv()`** so any caller that imports from `backend.*` gets `.env` loaded automatically.
+kitscout/                      # MongoDB Atlas data layer
+  db.py                        # AsyncIOMotorClient + collection refs (listings, item_comps, queries, offers)
+  schemas.py                   # Pydantic v2 models: Listing, ItemComp, Query, Offer, Location
+  indexes.py                   # ensure_indexes() — currently: unique fb_id on listings
+
+frontend/                      # Vite + React (teammate)
+
+tests/
+  test_parser.py               # 1 schema test + 6 live-API tests (@pytest.mark.integration)
+  test_db.py                   # 3 schema tests + 3 mongo round-trip tests (@pytest.mark.mongo)
+
+seed_db.py                     # populates 12 listings + 6 comps + 2 queries + 1 offer (across 3 hobbies)
+.env / .env.example            # ANTHROPIC_API_KEY, MONGODB_URI
+pyproject.toml                 # editable install + pytest markers; dynamic deps from requirements.txt
+requirements.txt               # runtime deps (single source of truth)
+```
 
 ## Stack — current
 
 - **Python 3.11+**, type hints on every function
-- **Anthropic Claude** via the `anthropic` SDK — `client.messages.parse(..., output_format=PydanticClass)` gives validated structured output
-- **Pydantic v2** — all cross-module schemas
+- **Anthropic Claude Haiku 4.5** via `client.messages.parse(output_format=PydanticClass)` for structured intent parsing
+- **MongoDB Atlas** via **motor** (async driver). `tlsCAFile=certifi.where()` is required because of how python.org Python on macOS handles certificates.
+- **Pydantic v2** for every cross-module data structure
 - **Frontend**: Vite + React (teammate's `frontend/`)
-- **Model**: `claude-opus-4-7` (set in `backend/services/intent_parser.py`). Switch to `claude-haiku-4-5` for cheaper inference if cost matters; the structured-output API is identical.
 
-## Component: Intent Parser (DONE for v1)
+## Architecture — planned vs done
 
-Located at `backend/services/intent_parser.py`. Public surface:
-
-```python
-from backend.services.intent_parser import parse_intent, ParsedIntent
-
-intent: ParsedIntent = parse_intent("i want to snowboard for under $250")
+```
+User input
+   │
+   ▼
+record_query()  ────▶  parse_intent()  ────▶  Claude Haiku 4.5
+   │  (DONE)              (DONE)
+   ▼
+queries collection ──────────────────┐
+                                     │ ParsedIntent
+                                     ▼
+                              SearchAgent  ──▶  scrape FB Marketplace, etc.
+                              (TODO)            ──▶  listings collection
+                                     │
+                                     ▼
+                              Ranker     ──▶  bundle into Offer
+                              (TODO)            ──▶  offers collection
+                                                ──▶  link back via queries.offer_id
 ```
 
-### Schema (current, v1 minimal)
+**Done:**
+- Intent parser (text → `ParsedIntent`)
+- DB layer (4 collections, schemas, unique-fb_id index)
+- Bridge service (`record_query` writes parsed query into `queries`)
+- Sample data (`seed_db.py`)
+- Tests with cleanup (no leftover data on cluster)
 
-```python
-class UserDetails(BaseModel):
-    age: int | None = None
-    occupation: str | None = None
-    constraints: list[str] | None = None
-
-class ParsedIntent(BaseModel):
-    hobby: str | None = None
-    budget_usd: float | None = None
-    location: str | None = None
-    skill_level: Literal["beginner", "intermediate", "advanced"] | None = None
-    user_details: UserDetails = Field(default_factory=UserDetails)
-    raw_query: str                                 # set by parse_intent, not by the LLM
-```
-
-Fixed shape, missing values are `null`. Internally the LLM is given the schema *without* `raw_query` (it's added afterward) so we don't waste tokens echoing the query back.
-
-### Things deliberately NOT in v1
-
-These were in the original plan; we shipped without them. Add only if a downstream component proves it needs them:
-
-- `hobby_specifics` open dict (per-hobby gear attributes)
-- `missing_fields` list
-- `confidence` self-rating
-- Clarification loop — caller currently checks `intent.hobby is None` etc. and asks the user themselves
-
-### Prompt strategy
-
-System prompt lives in `backend/prompts/intent_parser.txt` (loaded at module import). Tells the LLM to:
-- Normalize `hobby` to lowercase canonical form
-- Convert currency to USD using a static rate table (no FX API call)
-- Map skill cues to the three-level enum
-- Fill `user_details.*` only when explicitly mentioned, null otherwise
-- Never guess — null is correct when info is absent
-
-## Conventions
-
-- **Type hints** on every function signature.
-- **Pydantic** for any data structure that crosses a module boundary.
-- **No secrets in code.** API keys live in `.env`; `backend/__init__.py` loads it. `.env` is in `.gitignore`.
-- **Prompts as text files** under `backend/prompts/` (matches teammate's pattern), not inline strings. Lets you tweak the prompt without touching code.
+**Not done — likely next steps:**
+- SearchAgent: scrape Facebook Marketplace / Craigslist for listings, write to `listings`
+- Ranker: read `listings` + `item_comps`, build curated `Offer`, link back to `queries.offer_id`
+- API surface: a uAgent or HTTP endpoint that the frontend can call
+- Frontend ↔ backend wiring
 
 ## Commands
 
 ```bash
 # Setup (once)
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
-cp .env.example .env  # then edit to add ANTHROPIC_API_KEY
+.venv/bin/pip install -e ".[dev]"        # OR: .venv/bin/pip install -r requirements.txt
+cp .env.example .env                      # then fill in ANTHROPIC_API_KEY and MONGODB_URI
 
 # Run the parser on a single query (single-quote queries with $ to avoid shell expansion!)
 .venv/bin/python -m backend.services.intent_parser 'i want to snowboard for under $250'
 
-# Run all tests (skips integration tests if ANTHROPIC_API_KEY isn't set)
-.venv/bin/pytest tests/ -v
+# Parse + store in queries collection
+.venv/bin/python -m backend.services.query 'i want to snowboard for under $250'
 
-# Run only the schema test (no API key required)
-.venv/bin/pytest tests/test_parser.py::test_schema_defaults
+# Populate sample data (wipes + reseeds the 4 collections)
+.venv/bin/python seed_db.py
+
+# Run all tests (skips integration/mongo tests if env vars aren't set)
+.venv/bin/pytest tests/ -v
 ```
+
+## Conventions
+
+- **Type hints** on every function signature.
+- **Pydantic v2** for any data structure that crosses a module boundary.
+- **Async everywhere** for db access (motor is async; uAgents handlers are async).
+- **Don't create your own MongoClient.** Always import from `kitscout.db`. The connection pool is shared per-process.
+- **Service layer for db ops** — when a query is used in 2+ places, extract it into `backend/services/<name>.py` and import from there. Inline motor calls are fine for one-off operations.
+- **Prompts as text files** in `backend/prompts/`, loaded at import. Tweak prompts without code changes.
+- **No secrets in code.** Both API keys live in `.env`; `backend/__init__.py` and `kitscout/db.py` both call `load_dotenv()`. `.env` is gitignored.
 
 ## Open decisions / coordination items
 
-1. **`backend/services/followup.service.js` is JavaScript** — but our parser is Python. Either the teammate's backend will be Node/Express (in which case `intent_parser.py` doesn't fit and we need to rewrite or expose it via a service boundary), or the `.js` was a placeholder and the whole backend should be Python. **Resolve with teammate before adding more components.**
-2. **Originally planned around uAgents (Fetch.ai)** — with a frontend/backend split now in place, the multi-agent Agentverse pattern may no longer be the right shape. Confirm whether the Fetch.ai track is still being targeted.
-3. **Listings source** — Craigslist / Facebook Marketplace / eBay. Affects what `user_details.constraints` and any future `hobby_specifics` keys are actually useful for.
-4. **Currency scope** — current rate table is static (April 2026); USD is the canonical output. Fine for the demo. If we need accuracy beyond a few weeks, swap in an FX API.
+1. **`backend/services/followup.service.js` is JavaScript, all our other backend code is Python.** Resolve with teammate before adding more services. Current direction (implicit): Python backend.
+2. **Originally planned around uAgents (Fetch.ai's Agentverse).** With the frontend/backend split, multi-agent on Agentverse may no longer be the right shape — confirm whether the Fetch.ai track is still being targeted.
+3. **Listings source** — Craigslist / Facebook Marketplace / eBay. The schema (`Listing.fb_id`) currently assumes Facebook Marketplace. Will need adapters per source.
+4. **Currency scope** — current FX rate table in `backend/prompts/intent_parser.txt` is static (April 2026). Fine for the demo. Swap for an FX API only if needed.
+
+## Resolved decisions
+
+- **LLM provider**: Anthropic Claude Haiku 4.5. (Switched from Opus 4.7 for cost; quality on JSON extraction is identical.)
+- **DB**: MongoDB Atlas via motor (async). uAgents requires async; pymongo would block.

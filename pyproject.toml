@@ -10,6 +10,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "uvicorn>=0.32.0",
 ]
+dynamic = ["dependencies"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
@@ -19,9 +20,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["backend*"]
+include = ["backend*", "kitscout*"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
 
 [tool.pytest.ini_options]
 markers = [
     "integration: tests that hit the live Anthropic API (requires ANTHROPIC_API_KEY)",
+    "mongo: tests that hit the live MongoDB cluster (requires MONGODB_URI)",
 ]
