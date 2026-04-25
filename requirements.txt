@@ -1,7 +1,11 @@
 anthropic
+browserbase
 certifi
+fastapi
 httpx
 motor
 pydantic
 python-dotenv
+stagehand
 uagents
+uvicorn

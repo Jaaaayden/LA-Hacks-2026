@@ -3,13 +3,6 @@ name = "la-hacks-2026"
 version = "0.1.0"
 description = "Buyer-side AI agent for hobbyists - LA Hacks 2026"
 requires-python = ">=3.11"
-dependencies = [
-    "anthropic>=0.40.0",
-    "fastapi>=0.115.0",
-    "pydantic>=2.0",
-    "python-dotenv>=1.0",
-    "uvicorn>=0.32.0",
-]
 dynamic = ["dependencies"]
 
 [project.optional-dependencies]
