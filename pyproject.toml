@@ -1,0 +1,25 @@
+[project]
+name = "la-hacks-2026"
+version = "0.1.0"
+description = "Buyer-side AI agent for hobbyists - LA Hacks 2026"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that hit the live Anthropic API (requires ANTHROPIC_API_KEY)",
+]
