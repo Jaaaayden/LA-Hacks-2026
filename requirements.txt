@@ -1,7 +1,9 @@
 anthropic
+browserbase
 certifi
 httpx
 motor
 pydantic
 python-dotenv
+stagehand
 uagents
