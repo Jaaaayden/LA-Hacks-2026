@@ -27,6 +27,13 @@ def _skeleton_for_model(skeleton: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in skeleton.items() if k != "raw_query"}
 
 
+def _tool_property_schema(key: str) -> dict[str, Any]:
+    """``other`` is reserved for hobby-specific flags (``gen_followup``), not the parser."""
+    if key == "other":
+        return {"type": "null"}
+    return {}
+
+
 def _build_intent_tool(fillable: dict[str, Any]) -> dict[str, Any]:
     keys = list(fillable.keys())
     if not keys:
@@ -39,7 +46,7 @@ def _build_intent_tool(fillable: dict[str, Any]) -> dict[str, Any]:
         ),
         "input_schema": {
             "type": "object",
-            "properties": {k: {} for k in keys},
+            "properties": {k: _tool_property_schema(k) for k in keys},
             "required": keys,
             "additionalProperties": False,
         },
@@ -61,6 +68,8 @@ def _merge_intent_payload(
     for key in fillable:
         if key in tool_input:
             out[key] = tool_input[key]
+    if "other" in fillable:
+        out["other"] = None
     out["raw_query"] = raw_query
     return out
 
@@ -132,4 +141,4 @@ if __name__ == "__main__":
     import sys
 
     q = sys.argv[1] if len(sys.argv) > 1 else "I want to try photography under $300"
-    print(parse_intent_json(q, TEST))
+    print(parse_intent_json(q, INTENT_SKELETON))

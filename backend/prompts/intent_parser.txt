@@ -5,10 +5,10 @@ You complete an **intent template** the user provides in their message (JSON: ke
 **When template keys look like common hobby-intent fields (optional guidance):**
 - **hobby:** Lowercase canonical activity name when clear; else null.
 - **budget_usd:** Number in USD if a budget appears; convert currencies approximately; else null.
-- **location:** One postal-style line when a place is indicated — US: `City, ST, ZIP` or `City, ST`; non-US: `City, Region, Country`; else null.
+- **location:** The user's location / shopping area for finding listings, pickup, or shipping — **not** the destination or place where the activity will happen. One postal-style line when the user's area is indicated: US `City, ST, ZIP` or `City, ST`; non-US `City, Region, Country`; else null.
 - **skill_level:** Short label when cues exist; else null.
 - **age:** Integer if age is stated; else null.
-- **other:** Only if present in the template — fill per template semantics, else null.
+- **other:** Always **null** in this step. Do not put objects, arrays, or hobby flag rows in `other` — those are added only by the follow-up generator (`gen_followup`). Leave `other` null.
 
 If the template uses different keys, follow the template names and intent only.
 
