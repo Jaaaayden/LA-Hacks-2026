@@ -7,11 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "fb:login": "node scripts/fb_login.js",
+    "fb:scrape": "node scripts/run_scrape.js"
   },
   "dependencies": {
+    "@browserbasehq/sdk": "^2.5.0",
+    "@browserbasehq/stagehand": "^3.0.0",
+    "dotenv": "^16.4.5",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
