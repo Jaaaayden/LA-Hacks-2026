@@ -18,6 +18,7 @@ INTENT_SKELETON: dict[str, Any] = {
     "location": None,
     "skill_level": None,
     "age": None,
+    "misc": None,
     "other": None,
 }
 
@@ -31,6 +32,13 @@ def _tool_property_schema(key: str) -> dict[str, Any]:
     """``other`` is reserved for hobby-specific flags (``gen_followup``), not the parser."""
     if key == "other":
         return {"type": "null"}
+    if key == "misc":
+        return {
+            "anyOf": [
+                {"type": "string"},
+                {"type": "null"},
+            ]
+        }
     return {}
 
 
@@ -42,7 +50,8 @@ def _build_intent_tool(fillable: dict[str, Any]) -> dict[str, Any]:
         "name": _INTENT_TOOL_NAME,
         "description": (
             "Return the intent object: same keys as the template; replace nulls from the "
-            "user message to the best of your ability; keep null when unsupported."
+            "user message to the best of your ability; put leftover details in misc when "
+            "present; keep null when unsupported."
         ),
         "input_schema": {
             "type": "object",
@@ -78,7 +87,8 @@ def _user_message_for_parse(text: str, fillable: dict[str, Any]) -> str:
     template_block = json.dumps(fillable, indent=2)
     return (
         "Below is the intent template. Fill it from the user message — "
-        "replace nulls only where you can do so reasonably; keep null otherwise.\n\n"
+        "replace nulls only where you can do so reasonably; put concrete leftover "
+        "details in misc when that key exists; keep null otherwise.\n\n"
         f"Template:\n{template_block}\n\n"
         f"User message:\n{text}"
     )
