@@ -11,24 +11,40 @@ import styles from "./Picker.module.css";
 
 const POLL_MS = 4000;
 
-const CONDITION_LABEL = {
-  new: "New",
-  like_new: "Like new",
-  good: "Good",
-  fair: "Fair",
-  poor: "Poor",
-};
-
-function condDotClass(condition) {
-  if (condition === "like_new") return styles.condDotLikeNew;
-  if (condition === "fair" || condition === "poor") return styles.condDotFair;
-  return ""; // default green for "good" / "new"
-}
-
 function titleize(value) {
   return String(value || "item")
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function fitTier(overall) {
+  if (typeof overall !== "number") return "unknown";
+  if (overall >= 0.72) return "great";
+  if (overall >= 0.56) return "good";
+  return "okay";
+}
+
+function fitSummary(ranking) {
+  const overall = Number(ranking?.overall);
+  const hasOverall = Number.isFinite(overall);
+  const tier = fitTier(hasOverall ? overall : undefined);
+  const label = tier === "great" ? "Great fit" : tier === "good" ? "Good fit" : tier === "okay" ? "Okay fit" : "Candidate";
+  const percent = hasOverall ? Math.round(overall * 100) : null;
+
+  const reasons = [
+    { label: "close to your location", value: Number(ranking?.location) },
+    { label: "price is in your range", value: Number(ranking?.price) },
+    { label: "matches your search intent", value: Number(ranking?.match) },
+  ]
+    .filter((entry) => Number.isFinite(entry.value))
+    .sort((a, b) => b.value - a.value);
+
+  const reasonBits = reasons
+    .filter((entry, index) => index < 2 && entry.value >= 0.6)
+    .map((entry) => entry.label);
+  const reason = reasonBits.length > 0 ? reasonBits.join(" · ") : null;
+
+  return { tier, label, percent, reason };
 }
 
 function slotFor(item, index) {
@@ -353,6 +369,7 @@ export default function Picker() {
           )}
           {candidates.map((c, idx) => {
             const selected = selectedIds.includes(c.listing_id);
+            const fit = fitSummary(c.ranking);
             return (
               <div
                 key={c.listing_id}
@@ -399,21 +416,19 @@ export default function Picker() {
                     )}
                   </div>
                   <div className={styles.meta}>
-                    <span
-                      className={[styles.condDot, condDotClass(c.condition)]
-                        .filter(Boolean)
-                        .join(" ")}
-                    />
-                    <span>
-                      {CONDITION_LABEL[c.condition] || c.condition}
+                    <span className={styles.fitBadge} data-fit={fit.tier}>
+                      {fit.label}{fit.percent != null ? ` · ${fit.percent}%` : ""}
                     </span>
-                    <span className={styles.rating}>
-                      <span className={styles.starIcon}>
-                        <StarIcon width={11} height={11} />
+                    {c.rating != null && (
+                      <span className={styles.rating}>
+                        <span className={styles.starIcon}>
+                          <StarIcon width={11} height={11} />
+                        </span>
+                        {c.rating}
                       </span>
-                      {c.rating}
-                    </span>
+                    )}
                   </div>
+                  {fit.reason && <div className={styles.fitReason}>{fit.reason}</div>}
                   <div className={styles.locLine}>{c.location}</div>
                   <div className={styles.blurb}>{c.blurb}</div>
                 </div>
