@@ -29,6 +29,9 @@ from backend.services.offerup_scraper import search_offerup
 DEFAULT_RESULTS_PER_ITEM = 30
 _INTER_ITEM_DELAY_S = 2.5
 DEFAULT_SEARCH_LOCATION = "Los Angeles, CA"
+# Temporary kill-switches for in-progress recommender work.
+ENABLE_RECOMMENDATION_RANKING = False
+ENABLE_LISTING_ATTRIBUTE_ANALYSIS = False
 
 _active_lock = asyncio.Lock()
 
@@ -501,7 +504,7 @@ async def get_candidates(shopping_list_id: str) -> dict[str, list[dict[str, Any]
             )
 
         item = items_by_id.get(str(item_id))
-        if item:
+        if ENABLE_RECOMMENDATION_RANKING and item:
             ranked_docs = await rank_candidates_for_item(item, docs_with_distance)
         else:
             ranked_docs = sorted(

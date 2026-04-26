@@ -69,7 +69,17 @@ export default function Picker() {
   const [candidateError, setCandidateError] = useState(null);
 
   useEffect(() => {
-    if (kit || !id) {
+    if (!id) {
+      setKitLoading(false);
+      return undefined;
+    }
+
+    const needsRefresh =
+      !kit
+      || kit.kit_id !== id
+      || (kit.items || []).some((item) => !item.id);
+
+    if (!needsRefresh) {
       setKitLoading(false);
       return undefined;
     }

@@ -286,22 +286,31 @@ export default function BuildKit() {
     setHuntError(null);
 
     try {
-      await api.updateShoppingList(listId, toShoppingListUpdate(kit));
+      const updatedShoppingList = await api.updateShoppingList(
+        listId,
+        toShoppingListUpdate(kit),
+      );
+      const normalizedKit = normalizeKit(updatedShoppingList, {
+        fallbackHobby: detectedHobby,
+        fallbackBudget: detectedBudget,
+        fallbackId: listId,
+      });
+      setKit(normalizedKit);
       await api.startSearch(listId);
       saveKit({
         id: listId,
         route: `/pick/${listId}`,
-        hobby: kit.hobby,
-        budget_usd: kit.budget_usd,
+        hobby: normalizedKit.hobby,
+        budget_usd: normalizedKit.budget_usd,
         queryText,
-        queryId: queryId || kit.query_id || null,
+        queryId: queryId || normalizedKit.query_id || null,
         shoppingListId: listId,
         parsedIntent,
         detectedHobby,
         detectedBudget,
         followupQuestions,
         followupAnswers,
-        kit,
+        kit: normalizedKit,
         picks: {},
         picker: { slotIndex: 0, picks: {}, updatedAt: Date.now() },
       });
