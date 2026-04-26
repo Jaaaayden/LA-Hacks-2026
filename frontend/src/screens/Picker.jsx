@@ -30,21 +30,7 @@ function fitSummary(ranking) {
   const tier = fitTier(hasOverall ? overall : undefined);
   const label = tier === "great" ? "Great fit" : tier === "good" ? "Good fit" : tier === "okay" ? "Okay fit" : "Candidate";
   const percent = hasOverall ? Math.round(overall * 100) : null;
-
-  const reasons = [
-    { label: "close to your location", value: Number(ranking?.location) },
-    { label: "price is in your range", value: Number(ranking?.price) },
-    { label: "matches your search intent", value: Number(ranking?.match) },
-  ]
-    .filter((entry) => Number.isFinite(entry.value))
-    .sort((a, b) => b.value - a.value);
-
-  const reasonBits = reasons
-    .filter((entry, index) => index < 2 && entry.value >= 0.6)
-    .map((entry) => entry.label);
-  const reason = reasonBits.length > 0 ? reasonBits.join(" · ") : null;
-
-  return { tier, label, percent, reason };
+  return { tier, label, percent };
 }
 
 function slotFor(item, index) {
@@ -428,7 +414,6 @@ export default function Picker() {
                       </span>
                     )}
                   </div>
-                  {fit.reason && <div className={styles.fitReason}>{fit.reason}</div>}
                   <div className={styles.locLine}>{c.location}</div>
                   <div className={styles.blurb}>{c.blurb}</div>
                 </div>
