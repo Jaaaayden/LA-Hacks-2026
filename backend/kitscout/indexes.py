@@ -9,5 +9,6 @@ async def ensure_indexes() -> None:
 
     await listings.create_index("platform_id", unique=True)
     await listings.create_index("query_id")
-    await listings.create_index("shopping_list_id")
+    await listings.create_index("list_id")
+    await listings.create_index("item_id")
     await listings.create_index("search_query")

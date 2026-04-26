@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -43,6 +44,7 @@ class ShoppingListAttribute(BaseModel):
 
 
 class ShoppingListItem(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
     item_type: str
     search_query: str
     budget_usd: float = 0.0
@@ -76,8 +78,8 @@ class Listing(BaseModel):
     size: str | None = None
 
     query_id: str | None = None
-    shopping_list_id: str | None = None
-    shopping_list_item_type: str | None = None
+    list_id: str | None = None
+    item_id: str | None = None
     search_query: str | None = None
 
     location: Location = Field(default_factory=Location)

@@ -74,6 +74,7 @@ async def main() -> None:
         budget_usd=300,
         items=[
             ShoppingListItem(
+                id="item-snowboard",
                 item_type="snowboard",
                 search_query="beginner all-mountain snowboard",
                 budget_usd=140,
@@ -82,6 +83,7 @@ async def main() -> None:
                 notes="Beginner-friendly all-mountain board.",
             ),
             ShoppingListItem(
+                id="item-boots",
                 item_type="boots",
                 search_query="size 10 snowboard boots",
                 budget_usd=70,
@@ -90,6 +92,7 @@ async def main() -> None:
                 notes=None,
             ),
             ShoppingListItem(
+                id="item-helmet",
                 item_type="helmet",
                 search_query="snowboard helmet",
                 budget_usd=40,
@@ -118,8 +121,8 @@ async def main() -> None:
             hobby="snowboarding",
             item_type="snowboard",
             query_id=query_id,
-            shopping_list_id=shopping_list_id,
-            shopping_list_item_type="snowboard",
+            list_id=shopping_list_id,
+            item_id="item-snowboard",
             search_query="beginner all-mountain snowboard",
             location=Location(city="Pasadena", state="CA", raw="Pasadena, CA"),
             scraped_at=_NOW,
@@ -132,8 +135,8 @@ async def main() -> None:
             hobby="snowboarding",
             item_type="boots",
             query_id=query_id,
-            shopping_list_id=shopping_list_id,
-            shopping_list_item_type="boots",
+            list_id=shopping_list_id,
+            item_id="item-boots",
             search_query="size 10 snowboard boots",
             location=Location(city="Long Beach", state="CA", raw="Long Beach, CA"),
             scraped_at=_NOW,

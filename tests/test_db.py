@@ -42,7 +42,8 @@ def test_listing_schema_defaults() -> None:
     assert listing.location == Location()
     assert listing.raw == {}
     assert listing.source == "offerup"
-    assert listing.shopping_list_id is None
+    assert listing.list_id is None
+    assert listing.item_id is None
 
 
 def test_query_schema() -> None:
@@ -87,6 +88,7 @@ def test_shopping_list_schema() -> None:
         source_model="claude-sonnet-4-5",
         created_at=datetime.now(timezone.utc),
     )
+    assert shopping_list.items[0].id
     assert shopping_list.items[0].attributes[0].value[0].value == "10 US"
 
 

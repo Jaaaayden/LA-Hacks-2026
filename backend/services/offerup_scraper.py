@@ -663,7 +663,7 @@ async def _main() -> None:
                     slot_listings,
                     search_query=ingest_query,
                     hobby=ingest_hobby,
-                    shopping_list_item_type=slot_type,
+                    item_type=slot_type,
                     source="offerup",
                 )
                 for k in totals:

@@ -212,13 +212,15 @@ def test_to_listing_keeps_shopping_list_context() -> None:
         raw,
         hobby="snowboarding",
         search_query="size 10 snowboard boots",
-        shopping_list_item_type="boots",
+        item_type="boots",
         query_id="query-1",
-        shopping_list_id="list-1",
+        list_id="list-1",
+        item_id="item-1",
         scraped_at=_NOW,
     )
     assert listing is not None
     assert listing.item_type == "boots"
     assert listing.query_id == "query-1"
-    assert listing.shopping_list_id == "list-1"
+    assert listing.list_id == "list-1"
+    assert listing.item_id == "item-1"
     assert listing.search_query == "size 10 snowboard boots"

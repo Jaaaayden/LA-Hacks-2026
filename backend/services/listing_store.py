@@ -81,9 +81,10 @@ def to_listing(
     *,
     search_query: str,
     hobby: str | None = None,
-    shopping_list_item_type: str | None = None,
+    item_type: str | None = None,
     query_id: str | None = None,
-    shopping_list_id: str | None = None,
+    list_id: str | None = None,
+    item_id: str | None = None,
     scraped_at: datetime | None = None,
     source: str | None = None,
 ) -> Listing | None:
@@ -100,7 +101,7 @@ def to_listing(
     image_path = scraped.get("image_path") or scraped.get("imagePath")
 
     resolved_hobby = hobby or infer_hobby(search_query)
-    item_type = shopping_list_item_type or classify_item_type(
+    resolved_item_type = item_type or classify_item_type(
         scraped.get("title", ""),
         search_query,
         resolved_hobby,
@@ -114,10 +115,10 @@ def to_listing(
             title=scraped.get("title") or "",
             price_usd=float(scraped.get("price") or 0),
             hobby=resolved_hobby,
-            item_type=item_type,
+            item_type=resolved_item_type,
             query_id=query_id,
-            shopping_list_id=shopping_list_id,
-            shopping_list_item_type=shopping_list_item_type,
+            list_id=list_id,
+            item_id=item_id,
             search_query=search_query,
             location=parse_location(scraped.get("location")),
             image_url=image_url,
@@ -134,9 +135,10 @@ async def upsert_scraped_listings(
     *,
     search_query: str,
     hobby: str | None = None,
-    shopping_list_item_type: str | None = None,
+    item_type: str | None = None,
     query_id: str | None = None,
-    shopping_list_id: str | None = None,
+    list_id: str | None = None,
+    item_id: str | None = None,
     scraped_at: datetime | None = None,
     source: str | None = None,
 ) -> dict[str, int]:
@@ -146,9 +148,10 @@ async def upsert_scraped_listings(
             raw,
             search_query=search_query,
             hobby=hobby,
-            shopping_list_item_type=shopping_list_item_type,
+            item_type=item_type,
             query_id=query_id,
-            shopping_list_id=shopping_list_id,
+            list_id=list_id,
+            item_id=item_id,
             scraped_at=scraped_at,
             source=source,
         )
