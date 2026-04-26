@@ -27,8 +27,9 @@ _SHOPPING_LIST_TOOL = {
                         "search_query": {
                             "type": "string",
                             "description": (
-                                "Marketplace search phrase including the item type "
-                                "and the most important buying attributes."
+                                "Broad marketplace search phrase for candidate listings. "
+                                "Use the item type plus only minimal hobby/category context; "
+                                "keep exact specs and preferences in attributes."
                             ),
                         },
                         "budget_usd": {

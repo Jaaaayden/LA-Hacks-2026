@@ -8,8 +8,7 @@ Always return a non-empty `items` array.
 
 Each item represents one product to buy. Each item has:
 - item_type: the generic product name
-- search_query: a marketplace search phrase that includes the product name plus
-  the most important known buying attributes
+- search_query: a broad marketplace search phrase for finding candidate listings
 - budget_usd: the target used-market budget for this item in USD
 - attributes: list of direct product spec objects needed to buy/evaluate that item
 - notes: a short explanation only when useful
@@ -53,8 +52,15 @@ Use the input JSON aggressively:
 - Do not invent exact measurements that are not supplied or safely derivable.
 - If a product attribute is missing and cannot be inferred, leave it out of
   attributes rather than making up a value.
-- The search_query should reflect the strongest attributes in natural search form.
-  For example: "155 cm beginner all-mountain snowboard" or "size 10 snowboard boots".
+- The search_query should stay broad enough to return real marketplace results.
+  Use the generic product name plus only the minimal hobby/category word needed to
+  avoid ambiguity.
+- Do not put exact measurements, sizes, skill levels, style preferences, fit details,
+  or subjective descriptors in search_query. Keep those details in attributes.
+- Good search_query examples: "speedcube", "3x3 speedcube", "snowboard",
+  "snowboard boots", "snowboard helmet", "camera lens", "camping tent".
+- Bad search_query examples: "56mm 3x3 speedcube beginner control",
+  "155 cm beginner all-mountain snowboard", "size 10 snowboard boots".
 - Each value justification should briefly connect that exact value back to the user's
   provided answers or safe inferences. Do not repeat generic advice.
 
