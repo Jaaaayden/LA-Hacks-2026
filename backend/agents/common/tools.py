@@ -133,14 +133,97 @@ def _deal_tag(listing: dict[str, Any]) -> str:
     return f"  → {badge}"
 
 
+# Reason prefixes that indicate the LLM doesn't actually recommend the
+# listing. Hide these from the chat output — keeping them around just adds
+# noise. The LLM still sees them when scoring; we just don't surface them.
+_DUD_PREFIXES = (
+    "skip:", "skip ", "pass:", "pass ",
+    "avoid:", "avoid ", "wrong item", "wrong size", "don't",
+    "high risk:", "do not", "stay away",
+)
+
+
+def _is_dud(listing: dict[str, Any]) -> bool:
+    reason = (listing.get("reason") or "").strip().lower()
+    return any(reason.startswith(p) for p in _DUD_PREFIXES)
+
+
+def _dedupe(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop duplicates. Two passes:
+      1. Exact platform_id / url match (same listing scraped twice).
+      2. Same title + price + location (sellers commonly relist the same
+         physical item under fresh OfferUp item IDs — looks like duplicates
+         to the user even though Mongo sees them as distinct rows).
+    Keeps the first occurrence; combined with score-based ranking that's
+    the best-scored representative copy."""
+    seen_ids: set[str] = set()
+    seen_signatures: set[tuple[str, float, str]] = set()
+    out: list[dict[str, Any]] = []
+    for lst in listings:
+        key = str(lst.get("platform_id") or lst.get("url") or "")
+        if key and key in seen_ids:
+            continue
+        title = (lst.get("title") or "").strip().lower()
+        price = float(lst.get("price_usd") or 0)
+        location = (lst.get("location") or "").strip().lower()
+        signature = (title, price, location)
+        if title and signature in seen_signatures:
+            continue
+        if key:
+            seen_ids.add(key)
+        if title:
+            seen_signatures.add(signature)
+        out.append(lst)
+    return out
+
+
+def _format_listing_block(
+    lst: dict[str, Any], is_top_pick: bool
+) -> list[str]:
+    """One markdown block per listing — clickable title, price+location
+    line, optional deal verdict, italic reason. Blank line above so the
+    chat client renders the block as its own paragraph."""
+    price = lst.get("price_usd")
+    price_str = f"${price:.0f}" if isinstance(price, (int, float)) else "?"
+    title = lst.get("title") or "(untitled)"
+    if len(title) > 65:
+        title = title[:62] + "…"
+    location = lst.get("location") or "—"
+    url = lst.get("url")
+    title_md = f"**[{title}]({url})**" if url else f"**{title}**"
+
+    badge = ""
+    if is_top_pick and (lst.get("relevance_score") or 0) > 0:
+        badge = "  ★ **RECOMMENDED**"
+
+    label = lst.get("label")
+    pct = lst.get("pct_below_median")
+    if label == "great_deal" and isinstance(pct, (int, float)) and pct > 0:
+        verdict = f" · 🟢 GREAT DEAL ({pct:.0f}% below median)"
+    elif label == "above_market" and isinstance(pct, (int, float)) and pct < 0:
+        verdict = f" · 🔴 ABOVE MARKET ({abs(pct):.0f}% above median)"
+    elif label == "fair":
+        verdict = " · 🟡 FAIR"
+    else:
+        verdict = ""
+
+    block = ["", f"{title_md}{badge}", f"{price_str} · {location}{verdict}"]
+    reason = lst.get("reason")
+    if reason:
+        block.append(f"_{reason}_")
+    return block
+
+
 def format_kit_with_listings(
     shopping_list: dict[str, Any],
     listings_by_item_type: dict[str, list[dict[str, Any]] | None],
 ) -> str:
-    """Render the kit with Scout-returned listings interleaved under each item.
-
-    `listings_by_item_type[item_type]` is a list of listing dicts, an empty
-    list (no hits), or None (Scout failed / timed out — show a soft note).
+    """Render the kit with Scout-returned listings interleaved under each
+    item, formatted for chat readability:
+      - Markdown headers per kit slot
+      - Up to 3 deduped, non-dud listings per slot
+      - Clickable title, price · location, deal verdict, italic LLM reason
+      - First listing per slot gets ★ RECOMMENDED if it actually fits
     """
     hobby = shopping_list.get("hobby", "your hobby")
     budget = shopping_list.get("budget_usd")
@@ -148,61 +231,41 @@ def format_kit_with_listings(
 
     items = shopping_list.get("items") or []
     if not items:
-        return f"Kit for {hobby} ({budget_str} budget): (no items yet)"
+        return f"**Kit for {hobby} — {budget_str} budget:** (no items yet)"
 
-    lines = [f"Kit for {hobby} ({budget_str} budget):", ""]
+    lines: list[str] = [f"## Kit for {hobby} — {budget_str} budget"]
+
     for item in items:
         item_type = item.get("item_type", "item")
         item_budget = item.get("budget_usd") or 0.0
-        tag = "required" if item.get("required") else "optional"
+        required = "required" if item.get("required") else "optional"
+        budget_marker = f"~${item_budget:.0f}" if item_budget else ""
+        suffix_parts = [required] + ([budget_marker] if budget_marker else [])
+        suffix = " · ".join(suffix_parts)
 
-        header = f"• {item_type}  [{tag}"
-        if item_budget:
-            header += f", ~${item_budget:.0f}"
-        header += "]"
-        lines.append(header)
+        lines.append("")
+        lines.append("---")
+        lines.append(f"### {item_type.title()}  ({suffix})")
 
         listings = listings_by_item_type.get(item_type)
         if listings is None:
-            lines.append("    (live search unavailable — try again)")
-        elif not listings:
-            lines.append("    (no listings found yet)")
-        else:
-            # Combined score blends Scout's user-fit relevance with
-            # Pricer's deal-value score. Relevance is weighted slightly
-            # heavier — wrong-size gear is worse than wrong-price gear.
-            ranked = sorted(
-                listings,
-                key=_combined_score,
-                reverse=True,
-            )
-            for i, lst in enumerate(ranked[:3]):
-                price = lst.get("price_usd")
-                price_str = f"${price:.0f}" if isinstance(price, (int, float)) else "?"
-                title = lst.get("title") or "(untitled)"
-                # Long bundle titles get truncated so the link stays
-                # readable in chat. The full title is still visible on the
-                # OfferUp page when the user clicks through.
-                if len(title) > 70:
-                    title = title[:67] + "…"
-                location = lst.get("location") or "—"
-                url = lst.get("url")
-                # Clickable markdown link when a URL is present (ASI:One,
-                # Inspector, and most chat clients render this); plain
-                # title otherwise.
-                title_str = f"[{title}]({url})" if url else title
-                tag = _deal_tag(lst)
-                # Top pick gets a RECOMMENDED badge IF it actually fits the
-                # user (rel > 0). A 0-relevance "best deal" doesn't earn it.
-                pick_tag = ""
-                if i == 0 and (lst.get("relevance_score") or 0) > 0:
-                    pick_tag = "  ★ RECOMMENDED"
-                lines.append(
-                    f"    - {title_str}  {price_str}  [{location}]{tag}{pick_tag}"
-                )
-                reason = lst.get("reason")
-                if reason:
-                    lines.append(f"        {reason}")
-        lines.append("")
+            lines.append("")
+            lines.append("_(live search unavailable — try again)_")
+            continue
+
+        # 1. Dedupe by platform_id / url.
+        # 2. Drop "Skip:" / "Wrong item:" listings the LLM flagged as bad.
+        # 3. Rank by combined Scout-relevance + Pricer-deal-value score.
+        unique = _dedupe(listings)
+        good = [l for l in unique if not _is_dud(l)]
+        ranked = sorted(good or unique, key=_combined_score, reverse=True)
+
+        if not ranked:
+            lines.append("")
+            lines.append("_(no listings found yet)_")
+            continue
+
+        for i, lst in enumerate(ranked[:3]):
+            lines.extend(_format_listing_block(lst, is_top_pick=(i == 0)))
 
     return "\n".join(lines).rstrip()

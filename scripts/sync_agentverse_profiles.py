@@ -41,6 +41,21 @@ from uagents_core.registration import (  # noqa: E402
 )
 
 
+# Avatars are hosted on GitHub raw so every sync preserves them. Update
+# this constant if the repo or branch changes; the file paths under
+# assets/agent-avatars/ must stay in sync with what's committed.
+_AVATAR_BASE = (
+    "https://raw.githubusercontent.com/Jaaaayden/LA-Hacks-2026/main/"
+    "assets/agent-avatars"
+)
+_AVATARS = {
+    "hobbyist-coordinator": f"{_AVATAR_BASE}/coordinator.png",
+    "hobbyist-scout":       f"{_AVATAR_BASE}/camera.png",
+    "hobbyist-pricer":      f"{_AVATAR_BASE}/price.png",
+    "hobbyist-payment-sink": f"{_AVATAR_BASE}/payment.png",
+}
+
+
 # Import each agent module and pull description / readme / protocol digests
 # directly off the constructed Agent. Importing constructs the Agent but
 # does NOT bind a port (that only happens on .run()), so it's safe to do
@@ -63,6 +78,7 @@ def _agent_specs() -> list[dict]:
             "name": ag.name,
             "description": ag._description or "",
             "readme": ag._readme or "",
+            "avatar_url": _AVATARS.get(ag.name, ""),
             "protocols": list(ag.protocols.keys()),
         }
         for seed_var, ag in pairs
@@ -83,7 +99,7 @@ async def sync_one(
     profile = AgentProfile(
         description=spec["description"],
         readme=spec["readme"],
-        avatar_url="",
+        avatar_url=spec.get("avatar_url") or "",
     )
 
     # Mailbox-routed agents advertise the Agentverse mailbox URL as their

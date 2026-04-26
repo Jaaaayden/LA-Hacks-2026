@@ -97,6 +97,13 @@ def _rank(
     return out
 
 
+# OfferUp listings priced at $1 are almost universally junk (bundle lots,
+# "see all pictures" auctions, accidentally-listed items, free giveaways).
+# Hard-floor them out at the Mongo query so they never enter ranking,
+# scoring, or LLM reasoning. Real used-gear floors are well above this.
+_MIN_LISTING_PRICE_USD = 5.0
+
+
 async def mongo_search(
     *,
     hobby: str | None = None,
@@ -121,37 +128,49 @@ async def mongo_search(
     (size, riding_style, skill_level, etc.) outrank listings that don't,
     with price as the tiebreaker. This is the difference between "5 random
     boots" and "5 size-9 all-mountain beginner boots."
+
+    Sub-$5 listings are dropped unconditionally — they're functionally
+    always junk on OfferUp.
     """
-    price_clause: dict[str, Any] = {}
+    # Junk price floor applies on EVERY tier — $1 listings are noise no
+    # matter how we matched them. max_price ceiling is only enforced on
+    # the strict tiers; tier 3 is already a soft fallback so we don't
+    # want to over-filter it.
+    floor_clause: dict[str, Any] = {"price_usd": {"$gte": _MIN_LISTING_PRICE_USD}}
+    strict_price_clause: dict[str, Any] = floor_clause
     if max_price is not None and max_price > 0:
-        price_clause = {"price_usd": {"$lte": float(max_price)}}
+        strict_price_clause = {
+            "price_usd": {"$gte": _MIN_LISTING_PRICE_USD, "$lte": float(max_price)}
+        }
 
     # Tier 1: list_id + item_id (most precise). Falls back to list_id +
     # item_type if no item_id is known yet (older payloads, manual ops).
     if list_id and item_id:
-        q = {**price_clause, "list_id": list_id, "item_id": item_id}
+        q = {**strict_price_clause, "list_id": list_id, "item_id": item_id}
         docs = await _find_raw(q)
         if docs:
             return _rank(docs, attributes, limit)
     if list_id and item_type:
-        q = {**price_clause, "list_id": list_id, "item_type": item_type}
+        q = {**strict_price_clause, "list_id": list_id, "item_type": item_type}
         docs = await _find_raw(q)
         if docs:
             return _rank(docs, attributes, limit)
 
     # Tier 2: hobby + exact item_type, strict.
     if hobby and item_type:
-        q = {**price_clause, "hobby": hobby, "item_type": item_type}
+        q = {**strict_price_clause, "hobby": hobby, "item_type": item_type}
         docs = await _find_raw(q)
         if docs:
             return _rank(docs, attributes, limit)
 
-    # Tier 3: hobby + fuzzy match on the head noun only.
+    # Tier 3: hobby + fuzzy match on the head noun. Floor only — no max
+    # cap — but still no junk.
     if hobby and item_type:
         tokens = _meaningful_tokens(item_type)
         if tokens:
             head = tokens[-1]
             q = {
+                **floor_clause,
                 "hobby": hobby,
                 "item_type": {"$regex": re.escape(head), "$options": "i"},
             }
