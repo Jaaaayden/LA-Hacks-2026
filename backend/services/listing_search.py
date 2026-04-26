@@ -43,6 +43,19 @@ def _object_id(value: str) -> ObjectId:
         raise ValueError(f"Invalid Mongo ObjectId: {value}") from exc
 
 
+def _item_included_in_search(item: dict[str, Any]) -> bool:
+    """True if this line item should be scraped (same semantics as the picker)."""
+    if "checked" in item and item["checked"] is not None:
+        return bool(item["checked"])
+    if "required" in item and item["required"] is not None:
+        return bool(item["required"])
+    return True
+
+
+def _items_to_search(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [it for it in items if _item_included_in_search(it)]
+
+
 def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
     out = dict(doc)
     if "_id" in out:
@@ -272,12 +285,13 @@ async def start_search(
     if shopping_list is None:
         raise ValueError(f"Shopping list not found: {shopping_list_id}")
 
-    items = shopping_list.get("items") or []
+    all_items = shopping_list.get("items") or []
+    search_items = _items_to_search(all_items)
     now = _now()
     job = ListingSearchJob(
         shopping_list_id=shopping_list_id,
         status="pending",
-        items_total=len(items),
+        items_total=len(search_items),
         started_at=now,
     )
     payload = job.model_dump()
@@ -323,7 +337,8 @@ async def _run_search_job(
             search_location, _, _ = await _resolve_search_center(requested_location)
 
             hobby = shopping_list.get("hobby") or "unknown"
-            items = shopping_list.get("items") or []
+            raw_items = shopping_list.get("items") or []
+            items = _items_to_search(raw_items)
 
             await listing_search_jobs.update_one(
                 {"shopping_list_id": shopping_list_id},
