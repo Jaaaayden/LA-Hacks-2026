@@ -28,6 +28,10 @@ from backend.services.listing_search import (
     get_search_status,
     start_search,
 )
+from backend.services.offerup_message_reader import (
+    check_offerup_messages,
+    check_unread_offerup_chats,
+)
 
 app = FastAPI(title="KitScout API")
 
@@ -55,6 +59,17 @@ class ShoppingListUpdateRequest(BaseModel):
     hobby: str | None = None
     budget_usd: float | None = None
     items: list[ShoppingListItem] | None = None
+
+
+class OfferUpMessageCheckRequest(BaseModel):
+    listing_url: str = Field(min_length=1)
+    listing_title: str = ""
+    conversation: list[dict[str, str]] = Field(default_factory=list)
+
+
+class OfferUpUnreadCheckRequest(BaseModel):
+    limit: int = Field(default=10, ge=1, le=50)
+    known_messages_by_thread: dict[str, list[str]] = Field(default_factory=dict)
 
 
 def _http_error(exc: ValueError) -> HTTPException:
@@ -172,6 +187,33 @@ async def get_shopping_list_candidates(
     shopping_list_id: str,
 ) -> dict[str, list[dict[str, Any]]]:
     return await get_candidates(shopping_list_id)
+
+
+@app.post("/offerup/messages/check")
+async def check_offerup_listing_messages(
+    request: OfferUpMessageCheckRequest,
+) -> dict[str, Any]:
+    try:
+        return await check_offerup_messages(
+            request.listing_url,
+            conversation=request.conversation,
+            listing_title=request.listing_title,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/offerup/messages/check-unread")
+async def check_unread_offerup_messages(
+    request: OfferUpUnreadCheckRequest,
+) -> dict[str, Any]:
+    try:
+        return await check_unread_offerup_chats(
+            limit=request.limit,
+            known_messages_by_thread=request.known_messages_by_thread,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 class BargainRequest(BaseModel):

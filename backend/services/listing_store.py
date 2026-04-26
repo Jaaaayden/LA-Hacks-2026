@@ -34,8 +34,8 @@ def parse_location(raw: str | dict[str, Any] | None) -> Location:
     return Location(city=parts[0] or None, raw=raw)
 
 
-def normalize_condition(value: str | None) -> str | None:
-    text = (value or "").lower()
+def normalize_condition(value: Any) -> str | None:
+    text = str(value or "").lower()
     if not text:
         return None
     if "new" in text and "like" not in text:
