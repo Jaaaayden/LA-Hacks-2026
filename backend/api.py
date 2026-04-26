@@ -13,6 +13,7 @@ from backend.services.query_flow import (
     get_shopping_list,
     update_shopping_list,
 )
+from backend.services.bargain import add_to_bargain, get_bargain_items
 from backend.services.search_jobs import (
     get_candidates,
     get_search_status,
@@ -143,3 +144,26 @@ async def get_shopping_list_candidates(
     shopping_list_id: str,
 ) -> dict[str, list[dict[str, Any]]]:
     return await get_candidates(shopping_list_id)
+
+
+class BargainRequest(BaseModel):
+    item_id: str
+    listing_ids: list[str] = Field(min_length=1)
+
+
+@app.post("/shopping-lists/{shopping_list_id}/bargain", status_code=201)
+async def bargain_listings(
+    shopping_list_id: str,
+    request: BargainRequest,
+) -> list[dict[str, Any]]:
+    try:
+        return await add_to_bargain(
+            shopping_list_id, request.item_id, request.listing_ids
+        )
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@app.get("/shopping-lists/{shopping_list_id}/bargain-items")
+async def list_bargain_items(shopping_list_id: str) -> list[dict[str, Any]]:
+    return await get_bargain_items(shopping_list_id)

@@ -39,4 +39,11 @@ export const api = {
     request(`/shopping-lists/${shoppingListId}/search-status`),
   getCandidates: (shoppingListId) =>
     request(`/shopping-lists/${shoppingListId}/candidates`),
+  addToBargain: (shoppingListId, itemId, listingIds) =>
+    request(`/shopping-lists/${shoppingListId}/bargain`, {
+      method: "POST",
+      body: { item_id: itemId, listing_ids: listingIds },
+    }),
+  getBargainItems: (shoppingListId) =>
+    request(`/shopping-lists/${shoppingListId}/bargain-items`),
 };

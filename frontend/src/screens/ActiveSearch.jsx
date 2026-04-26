@@ -4,50 +4,93 @@ import StepFrame from "../layout/StepFrame.jsx";
 import Stat from "../primitives/Stat.jsx";
 import ImageWithFallback from "../primitives/ImageWithFallback.jsx";
 import { ArrowRightIcon } from "../primitives/icons.jsx";
-import { MOCK_ACTIVE } from "../data/mocks.js";
+import { api } from "../api/client.js";
 import styles from "./ActiveSearch.module.css";
 
+const POLL_MS = 5000;
+
+function titleize(s) {
+  return String(s || "item")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function relativeTime(iso) {
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return "just now";
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
 const STATUS_LABEL = {
-  negotiating: "Negotiating",
+  queued: "Queued",
   messaging: "Messaging",
-  just_found: "Just found",
   agreed: "Agreed",
+  gave_up: "Passed",
+  error: "Error",
 };
 
-// Lightweight scripted "activity" — adds a new line every ~6s to give the
-// dashboard a live feel during a demo. Replace with real SSE/polling later.
-const SCRIPTED_TICKS = [
-  { time_label: "now", text: "Marcus T. agreed to $108 — Burton Custom is ours." },
-  {
-    time_label: "now",
-    text: "Priya S. confirmed Cartel bindings fit Burton baseplate.",
-  },
-  { time_label: "now", text: "Jake R. opened the boots thread." },
-];
 
 export default function ActiveSearch() {
-  useParams(); // currently just for URL shape; data is mock
+  const { id } = useParams();
   const [filter, setFilter] = useState("all");
-  const [activity, setActivity] = useState(MOCK_ACTIVE.activity);
+  const [items, setItems] = useState([]);
+  const [activity, setActivity] = useState([]);
 
-  // Drip-feed extra activity rows every 6 seconds.
+  // Load bargain items and poll for updates.
   useEffect(() => {
-    let i = 0;
-    const id = setInterval(() => {
-      if (i >= SCRIPTED_TICKS.length) {
-        clearInterval(id);
-        return;
+    if (!id) return undefined;
+    let cancelled = false;
+
+    async function fetchItems() {
+      try {
+        const data = await api.getBargainItems(id);
+        if (cancelled) return;
+        setItems(data || []);
+        // Build activity feed from conversation events.
+        const feed = [];
+        for (const item of (data || [])) {
+          const conv = item.conversation || [];
+          if (conv.length > 0) {
+            feed.push({
+              time_label: relativeTime(item.updated_at),
+              text: `Sent opening message to seller about ${item.title}.`,
+            });
+          } else if (item.status === "queued" || item.status === "messaging") {
+            feed.push({
+              time_label: relativeTime(item.added_at),
+              text: `Added ${item.title} to bargain queue.`,
+            });
+          }
+        }
+        setActivity(feed.reverse());
+      } catch (err) {
+        if (!cancelled) console.warn("[active-search] fetch failed:", err.message);
       }
-      setActivity((prev) => [SCRIPTED_TICKS[i], ...prev]);
-      i += 1;
-    }, 6000);
-    return () => clearInterval(id);
-  }, []);
+    }
+
+    fetchItems();
+    const handle = setInterval(fetchItems, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
+  }, [id]);
 
   const filtered = useMemo(() => {
-    if (filter === "all") return MOCK_ACTIVE.items;
-    return MOCK_ACTIVE.items.filter((it) => it.status === filter);
-  }, [filter]);
+    if (filter === "all") return items;
+    return items.filter((it) => it.status === filter);
+  }, [items, filter]);
+
+  // Derived stats from real data.
+  const negotiatingCount = items.filter(
+    (it) => it.status === "messaging",
+  ).length;
+  const agreedCount = items.filter((it) => it.status === "agreed").length;
+  const committedUsd = items
+    .filter((it) => it.status === "agreed")
+    .reduce((s, it) => s + (it.target_price_usd || 0), 0);
 
   const headerRight = (
     <span className={styles.headerStatus}>
@@ -68,40 +111,40 @@ export default function ActiveSearch() {
       <div className={styles.layout}>
         <div>
           <div className={styles.kicker}>
-            Active search · {MOCK_ACTIVE.items[0]?.label && "Snowboarding"}
+            Active search
           </div>
           <h1 className={styles.headline}>Your kit, in motion.</h1>
 
           <div className={styles.statRow}>
             <Stat
               label="Committed"
-              value={`$${MOCK_ACTIVE.committed_usd}`}
-              sub={`of $${MOCK_ACTIVE.budget_usd}`}
-              progress={MOCK_ACTIVE.committed_usd / MOCK_ACTIVE.budget_usd}
+              value={`$${committedUsd.toFixed(0)}`}
+              sub="agreed items"
+              progress={0}
             />
             <Stat
               label="Negotiating"
-              value={MOCK_ACTIVE.negotiating_count}
-              sub={`avg counter saving · ${MOCK_ACTIVE.avg_counter_saving_pct}%`}
+              value={negotiatingCount}
+              sub="opening messages sent"
             />
             <Stat
               label="Agreed"
-              value={MOCK_ACTIVE.agreed_count}
-              sub={`${MOCK_ACTIVE.pickups_scheduled} pickup scheduled`}
+              value={agreedCount}
+              sub="deals closed"
             />
             <Stat
-              label="Time saved"
-              value={`~${MOCK_ACTIVE.time_saved_hours}h`}
-              sub={`${MOCK_ACTIVE.listings_reviewed} listings reviewed`}
+              label="In queue"
+              value={items.filter((it) => it.status === "queued").length}
+              sub="waiting to message"
             />
           </div>
 
           <div className={styles.itemsHeader}>
             <span className={styles.itemsHeaderLeft}>
-              Items in flight · {MOCK_ACTIVE.items.length}
+              Items in flight · {items.length}
             </span>
             <div className={styles.filters}>
-              {["all", "negotiating", "agreed"].map((f) => (
+              {["all", "messaging", "agreed"].map((f) => (
                 <button
                   key={f}
                   className={styles.filterBtn}
@@ -115,48 +158,76 @@ export default function ActiveSearch() {
           </div>
 
           <div className={styles.itemList}>
-            {filtered.map((it, idx) => (
-              <div
-                key={it.slot}
-                className={styles.itemRow}
-                style={{ animationDelay: `${idx * 60}ms` }}
-              >
-                <div className={styles.imgWithBadge}>
-                  <ImageWithFallback slot={it.slot} size={56} />
-                  <span className={styles.dateBadge}>{it.added_label}</span>
-                </div>
-                <div className={styles.itemBody}>
-                  <div className={styles.itemHead}>
-                    <span>{it.label}</span>
-                    <span
-                      className={styles.statusChip}
-                      data-status={it.status}
-                    >
-                      {STATUS_LABEL[it.status]}
-                    </span>
-                  </div>
-                  <div className={styles.itemTitle}>{it.title}</div>
-                  <div className={styles.itemMeta}>{it.meta}</div>
-                </div>
-                <div className={styles.priceCol}>
-                  <div className={styles.priceRow}>
-                    <span className={styles.priceMain}>
-                      ${it.target_price}
-                    </span>
-                    <span className={styles.priceWas}>${it.list_price}</span>
-                  </div>
-                  <span className={styles.priceLabel}>
-                    target · saving ${it.saving}
-                  </span>
-                </div>
-                <div className={styles.priceCol}>
-                  <span className={styles.statusText}>{it.status_text}</span>
-                  <button className={styles.viewLink}>
-                    View <ArrowRightIcon />
-                  </button>
-                </div>
+            {filtered.length === 0 && (
+              <div style={{ padding: "32px 0", color: "var(--ink-muted)" }}>
+                No items in flight yet.
               </div>
-            ))}
+            )}
+            {filtered.map((it, idx) => {
+              const saving = Math.max(
+                0,
+                (it.price_usd || 0) - (it.target_price_usd || 0),
+              );
+              const statusText =
+                it.status === "messaging" && it.last_message
+                  ? `Sent: "${it.last_message.slice(0, 60)}${it.last_message.length > 60 ? "…" : ""}"`
+                  : it.status === "agreed"
+                    ? "Deal agreed"
+                    : it.status === "gave_up"
+                      ? "Seller firm — passed"
+                      : it.status === "error"
+                        ? `Error: ${it.error || "unknown"}`
+                        : "Queued to message";
+              return (
+                <div
+                  key={it._id || it.listing_id}
+                  className={styles.itemRow}
+                  style={{ animationDelay: `${idx * 60}ms` }}
+                >
+                  <div className={styles.imgWithBadge}>
+                    <ImageWithFallback slot={it.item_type} size={56} />
+                    <span className={styles.dateBadge}>
+                      {relativeTime(it.added_at)}
+                    </span>
+                  </div>
+                  <div className={styles.itemBody}>
+                    <div className={styles.itemHead}>
+                      <span>{titleize(it.item_type)}</span>
+                      <span
+                        className={styles.statusChip}
+                        data-status={it.status}
+                      >
+                        {STATUS_LABEL[it.status] || it.status}
+                      </span>
+                    </div>
+                    <div className={styles.itemTitle}>{it.title}</div>
+                    <div className={styles.itemMeta}>{it.location_raw}</div>
+                  </div>
+                  <div className={styles.priceCol}>
+                    <div className={styles.priceRow}>
+                      <span className={styles.priceMain}>
+                        ${it.target_price_usd}
+                      </span>
+                      <span className={styles.priceWas}>${it.price_usd}</span>
+                    </div>
+                    <span className={styles.priceLabel}>
+                      target · saving ${saving.toFixed(0)}
+                    </span>
+                  </div>
+                  <div className={styles.priceCol}>
+                    <span className={styles.statusText}>{statusText}</span>
+                    <a
+                      href={it.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={styles.viewLink}
+                    >
+                      View <ArrowRightIcon />
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
