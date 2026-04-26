@@ -64,7 +64,7 @@ export default function ActiveSearch() {
   );
 
   return (
-    <StepFrame step={4} label="Active search" rightSlot={headerRight}>
+    <StepFrame step={5} label="Active search" rightSlot={headerRight}>
       <div className={styles.layout}>
         <div>
           <div className={styles.kicker}>

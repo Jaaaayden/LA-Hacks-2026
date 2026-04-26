@@ -7,6 +7,8 @@ export function KitProvider({ children }) {
   const [queryText, setQueryText] = useState("");
   const [detectedHobby, setDetectedHobby] = useState(null);
   const [detectedBudget, setDetectedBudget] = useState(null);
+  const [followupQuestions, setFollowupQuestions] = useState([]);
+  const [followupAnswers, setFollowupAnswers] = useState({});
   const [kit, setKit] = useState(null);
   const [picks, setPicks] = useState({});
 
@@ -20,12 +22,25 @@ export function KitProvider({ children }) {
       setDetectedHobby,
       detectedBudget,
       setDetectedBudget,
+      followupQuestions,
+      setFollowupQuestions,
+      followupAnswers,
+      setFollowupAnswers,
       kit,
       setKit,
       picks,
       setPicks,
     }),
-    [parsedIntent, queryText, detectedHobby, detectedBudget, kit, picks],
+    [
+      parsedIntent,
+      queryText,
+      detectedHobby,
+      detectedBudget,
+      followupQuestions,
+      followupAnswers,
+      kit,
+      picks,
+    ],
   );
 
   return <KitContext.Provider value={value}>{children}</KitContext.Provider>;

@@ -298,6 +298,92 @@ export function buildKitFor({ hobby, budgetUsd } = {}) {
   };
 }
 
+// ─── follow-up questions (Step 2) ──────────────────────────────────────────
+// Backend's gen_followup() returns plain strings; the screen accepts richer
+// {question, rationale, placeholder} objects. Until the backend enriches,
+// we hand-author rationales per hobby for the demo case.
+
+const FOLLOWUP_BY_HOBBY = {
+  snowboarding: [
+    {
+      question: "How would you describe your experience?",
+      rationale:
+        "You said ‘beginner’ — give me a sentence so I can match flex and shape.",
+      placeholder: "e.g. Never been, but I've skied for years…",
+    },
+    {
+      question: "Where are you mostly riding?",
+      rationale:
+        "Different mountains call for different gear — PNW vs. dry Utah vs. icy East.",
+      placeholder: "e.g. Mostly Park City and Brighton…",
+    },
+    {
+      question: "How many days do you plan to ride this season?",
+      rationale: "Helps me decide how durable the gear needs to be.",
+      placeholder: "e.g. Maybe 8 weekend days…",
+    },
+    {
+      question: "What matters most when I negotiate?",
+      rationale: "I'll weight tradeoffs against this when comparing listings.",
+      placeholder: "e.g. Best quality I can get without going over $300…",
+    },
+  ],
+  photography: [
+    {
+      question: "What kind of subjects are you shooting?",
+      rationale: "Portraits, landscapes, and street need different lenses.",
+      placeholder: "e.g. Mostly travel and street photography…",
+    },
+    {
+      question: "Are you comfortable with manual settings?",
+      rationale:
+        "Tells me whether to skew toward simpler bodies or more capable manual controls.",
+      placeholder: "e.g. I've shot on auto for years and want to learn manual…",
+    },
+    {
+      question: "What matters most when I negotiate?",
+      rationale: "I'll weight tradeoffs against this when comparing listings.",
+      placeholder: "e.g. Lowest shutter count I can find under budget…",
+    },
+  ],
+  pottery: [
+    {
+      question: "Will you have access to a kiln?",
+      rationale:
+        "Determines whether to prioritize air-dry clay or kiln-fired starter sets.",
+      placeholder: "e.g. There's a community kiln at the rec center…",
+    },
+    {
+      question: "How much space do you have to work with?",
+      rationale: "Tabletop wheels vs. floor wheels are very different buys.",
+      placeholder: "e.g. A small corner of my apartment…",
+    },
+  ],
+};
+
+const FOLLOWUP_GENERIC = [
+  {
+    question: "Tell me a bit more about your experience.",
+    rationale: "Helps me skew toward beginner-friendly or pro-level gear.",
+    placeholder: "e.g. Total beginner, never tried…",
+  },
+  {
+    question: "Where will you mostly use this gear?",
+    rationale: "Environment affects what features matter.",
+    placeholder: "e.g. Mostly at home, sometimes travel…",
+  },
+  {
+    question: "What matters most when I negotiate?",
+    rationale: "I'll weight tradeoffs against this when comparing listings.",
+    placeholder: "e.g. Best quality I can get within budget…",
+  },
+];
+
+export function followupFor(hobby) {
+  const canonical = canonicalHobby(hobby);
+  return FOLLOWUP_BY_HOBBY[canonical] || FOLLOWUP_GENERIC;
+}
+
 // ─── candidates (Picker) and active-search (Step 4) — unchanged ────────────
 
 export const MOCK_CANDIDATES = {

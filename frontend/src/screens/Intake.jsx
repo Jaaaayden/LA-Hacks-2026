@@ -170,10 +170,10 @@ export default function Intake() {
       if (result.parsed_intent?.budget_usd != null)
         setDetectedBudget(result.parsed_intent.budget_usd);
       const id = result.query_id || "mock-query-1";
-      navigate(`/kit/${id}`);
+      navigate(`/followup/${id}`);
     } catch (e) {
       console.warn("[parse] backend offline, using client-side parse:", e.message);
-      navigate(`/kit/local-${Date.now()}`);
+      navigate(`/followup/local-${Date.now()}`);
     } finally {
       setBusy(false);
     }

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { KitProvider } from "./state/KitContext.jsx";
 import Intake from "./screens/Intake.jsx";
+import Followup from "./screens/Followup.jsx";
 import BuildKit from "./screens/BuildKit.jsx";
 import Picker from "./screens/Picker.jsx";
 import ActiveSearch from "./screens/ActiveSearch.jsx";
@@ -10,6 +11,7 @@ export default function App() {
     <KitProvider>
       <Routes>
         <Route path="/" element={<Intake />} />
+        <Route path="/followup/:id" element={<Followup />} />
         <Route path="/kit/:id" element={<BuildKit />} />
         <Route path="/pick/:id" element={<Picker />} />
         <Route path="/active/:id" element={<ActiveSearch />} />

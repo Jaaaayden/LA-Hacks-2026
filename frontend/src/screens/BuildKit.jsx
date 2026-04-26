@@ -93,7 +93,7 @@ export default function BuildKit() {
   }
 
   return (
-    <StepFrame step={2} label="Build kit">
+    <StepFrame step={3} label="Build kit">
       <div className={styles.layout}>
         {/* LEFT: items */}
         <div>

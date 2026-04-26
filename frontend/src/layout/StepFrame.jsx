@@ -4,7 +4,7 @@ import styles from "./StepFrame.module.css";
 
 export default function StepFrame({
   step,
-  total = 4,
+  total = 5,
   label,
   showBack = true,
   rightSlot,
