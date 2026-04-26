@@ -40,7 +40,6 @@ All four agents run inside one `uagents.Bureau` so sibling-to-sibling messages s
   - `hobbyist-pricer` — https://agentverse.ai/agents/details/agent1qgu0efrnvgrhn4cul2le0xd9xwk54w5k755jsjg9er8mcnpfkjkcvg9km2g/profile
   - `hobbyist-payment-sink` — https://agentverse.ai/agents/details/agent1qwxn48r8xq7gfddwxgfejs3f2y8sfad5nyc8fkkj9yaccqvyhtvycd4tx05/profile
 - **Latest Payment Protocol testnet tx:** `TESTNET-825A098DAD484303` (from a live-listings unlock cycle)
-- **Demo video:** <!-- TODO: paste video link -->
 
 ### Fetch.ai tech used
 
@@ -172,41 +171,9 @@ Stop with `bash scripts/run_agents.sh stop`.
 
 ---
 
-## Demo script (75s)
 
-The shareable ASI:One link above shows this exact arc — start with a hobby that has no cached data, watch the Payment Protocol cycle unlock the live scrape, end with a populated kit.
 
-```
-0–5s   slide:    "hobbify — turns 'I want a hobby' into a curated kit of real used listings"
-5–25s  ASI:One:  "I want to get into <hobby>, $<budget>, in LA"
-                 → Coordinator asks clarifying follow-ups (size, skill, style…)
-                 → user answers all of them in one message
-25–40s ASI:One:  Empty kit reply — N items, each marked
-                   "Hunting for fresh listings — say `go live` to scrape OfferUp
-                    for this item right now."
-                 (terminal: [scout fanout] → [scout reply] × N (hits=0))
-40–55s ASI:One:  "go live"
-                 → terminal: init_payment → RequestPayment → CommitPayment →
-                   CompletePayment
-                 → "Payment confirmed (testnet tx TESTNET-…). Triggering live
-                    OfferUp scrape now…"
-55–70s ASI:One:  "Fresh results (tx TESTNET-…):" — same kit, but every slot
-                 now populated with real OfferUp listings + Pricer deal labels:
-                   "Burton Moto size 9  $45  → 🟢 GREAT DEAL (28% below median)"
-70–75s slide:    Agentverse dashboard showing 4 agents online with manifest
-                 digests. Voiceover: "cached results are free, the Payment
-                 Protocol gates fresh data."
-```
 
----
-
-## About me / About this project
-
-UCLA CS student, building toward Google MLOps. This project came out of frustration looking for hobby gear on OfferUp — sifting through hundreds of listings to figure out which ones are good deals at the right size, condition, and price for someone just starting out is genuinely tedious. A multi-agent network makes the search structured and explainable: one agent reasons about *what* you need, another finds candidates, another tells you whether the price is fair.
-
-Submitted to LA Hacks 2026 for the Fetch.ai Agentverse track. The four agents above are the network. The core question we wanted to answer: *can a multi-agent setup feel like a knowledgeable friend, not a search engine?*
-
----
 
 ## Repo layout
 
