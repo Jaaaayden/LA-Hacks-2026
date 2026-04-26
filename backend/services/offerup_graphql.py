@@ -200,6 +200,26 @@ def _document_headers(referer: str = "https://offerup.com/") -> dict[str, str]:
     return headers
 
 
+_RATE_LIMIT_BACKOFFS_S = (5.0, 15.0, 45.0)
+
+
+async def _sleep_for_retry(response: httpx.Response, attempt: int) -> None:
+    """Honor Retry-After when OfferUp sends one; otherwise exponential backoff.
+
+    OfferUp's edge sometimes returns Retry-After in seconds, sometimes not at
+    all. The fallback schedule (5s, 15s, 45s) keeps total wait under the
+    bureau's 150s scrape timeout in `_run_live_scrape`.
+    """
+    retry_after = response.headers.get("retry-after")
+    delay = _RATE_LIMIT_BACKOFFS_S[min(attempt, len(_RATE_LIMIT_BACKOFFS_S) - 1)]
+    if retry_after:
+        try:
+            delay = max(delay, float(retry_after))
+        except ValueError:
+            pass
+    await asyncio.sleep(delay)
+
+
 async def _post_graphql(
     operation_name: str,
     variables: dict[str, Any],
@@ -213,13 +233,18 @@ async def _post_graphql(
         "query": query,
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            OFFERUP_GRAPHQL_URL,
-            headers=_headers(operation_name, referer_query=referer_query),
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
+        for attempt in range(len(_RATE_LIMIT_BACKOFFS_S) + 1):
+            response = await client.post(
+                OFFERUP_GRAPHQL_URL,
+                headers=_headers(operation_name, referer_query=referer_query),
+                json=payload,
+            )
+            if response.status_code == 429 and attempt < len(_RATE_LIMIT_BACKOFFS_S):
+                await _sleep_for_retry(response, attempt)
+                continue
+            response.raise_for_status()
+            data = response.json()
+            break
     if data.get("errors"):
         raise RuntimeError(f"OfferUp GraphQL error: {data['errors']}")
     return data
@@ -659,8 +684,13 @@ async def get_offerup_listing_detail(item: str | dict[str, Any]) -> dict[str, An
     listing_id = _listing_id_from_item(item)
     url = f"https://offerup.com/item/detail/{listing_id}"
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        response = await client.get(url, headers=_document_headers())
-        response.raise_for_status()
+        for attempt in range(len(_RATE_LIMIT_BACKOFFS_S) + 1):
+            response = await client.get(url, headers=_document_headers())
+            if response.status_code == 429 and attempt < len(_RATE_LIMIT_BACKOFFS_S):
+                await _sleep_for_retry(response, attempt)
+                continue
+            response.raise_for_status()
+            break
 
     next_data = _extract_next_data(response.text)
     state = (

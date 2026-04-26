@@ -34,6 +34,10 @@ async def search_offerup(
         max_results=max_results,
         location=location,
         include_details=include_details,
+        # Lower than the graphql default (5). Parallel detail fetches were
+        # the main reason OfferUp 429'd us mid-job — pacing them keeps the
+        # scrape under the throttle.
+        detail_concurrency=2,
     )
 
 
