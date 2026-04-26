@@ -169,6 +169,11 @@ async def complete_query_session(
     questions_asked_count = _question_count(existing)
     max_followup_questions = _max_followups(existing)
     question_history = _question_history(existing)
+    # Build the conversation transcript: every prior user message plus the
+    # answer that just arrived. Lets the followup generator see what's been
+    # discussed and skip topics the user already addressed.
+    prior_messages = list(existing.get("raw_messages") or [])
+    prior_messages.append(followup_text)
 
     if questions_asked_count >= max_followup_questions:
         return await _create_shopping_list(
@@ -186,6 +191,7 @@ async def complete_query_session(
         include_hobby_other_flags=False,
         model=intent_model,
         previous_questions=question_history,
+        prior_user_messages=prior_messages,
     )
     next_questions = followup.get("questions") or []
     remaining_slots = max_followup_questions - questions_asked_count
