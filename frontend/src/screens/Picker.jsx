@@ -1,11 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import StepFrame from "../layout/StepFrame.jsx";
 import Button from "../primitives/Button.jsx";
 import ImageWithFallback from "../primitives/ImageWithFallback.jsx";
 import { ArrowRightIcon, CheckIcon, StarIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
+import { api } from "../api/client.js";
 import styles from "./Picker.module.css";
+
+const POLL_MS = 4000;
 
 const CONDITION_LABEL = {
   new: "New",
@@ -21,21 +24,107 @@ function condDotClass(condition) {
   return ""; // default green for "good" / "new"
 }
 
+function titleize(value) {
+  return String(value || "item")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function slotFor(item, index) {
+  return String(item.slot || item.item_type || item.id || `item-${index}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizePickerKit(shoppingList, fallbackId) {
+  return {
+    ...shoppingList,
+    kit_id: shoppingList.kit_id || fallbackId,
+    items: (shoppingList.items || []).map((item, index) => {
+      const required = item.required ?? item.checked ?? true;
+      return {
+        ...item,
+        slot: item.slot || slotFor(item, index),
+        label: item.label || titleize(item.item_type),
+        checked: item.checked ?? required,
+      };
+    }),
+  };
+}
+
 export default function Picker() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const { kit, picks, setPicks } = useKit();
+  const { kit, setKit, setQueryId, setShoppingListId, picks, setPicks } = useKit();
+  const [slotIndex, setSlotIndex] = useState(0);
+  const [candidatesByItem, setCandidatesByItem] = useState({});
+  const [searchStatus, setSearchStatus] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+
+  useEffect(() => {
+    if (kit || !id) return undefined;
+    let cancelled = false;
+
+    api
+      .getShoppingList(id)
+      .then((shoppingList) => {
+        if (cancelled) return;
+        setShoppingListId(id);
+        if (shoppingList.query_id) setQueryId(shoppingList.query_id);
+        setKit(normalizePickerKit(shoppingList, id));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.warn("[picker] load kit failed:", err.message);
+          setLoadError("Could not load this kit from the backend.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, kit, setKit, setQueryId, setShoppingListId]);
+
+  useEffect(() => {
+    if (!id) return undefined;
+    let cancelled = false;
+
+    async function fetchCandidates() {
+      try {
+        const [candidateData, statusData] = await Promise.all([
+          api.getCandidates(id),
+          api.getSearchStatus(id).catch(() => null),
+        ]);
+        if (cancelled) return;
+        setCandidatesByItem(candidateData || {});
+        setSearchStatus(statusData);
+        setLoadError(null);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[picker] candidates failed:", err.message);
+          setLoadError("Could not load listing candidates from the backend.");
+        }
+      }
+    }
+
+    fetchCandidates();
+    const handle = setInterval(fetchCandidates, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
+  }, [id]);
 
   // Active slots = checked items only, in their declared order.
-  const slots = useMemo(
-    () => (kit?.items || []).filter((it) => it.checked).map((it) => it.slot),
+  const activeItems = useMemo(
+    () => (kit?.items || []).filter((it) => it.checked ?? it.required),
     [kit?.items],
   );
 
-  const [slotIndex, setSlotIndex] = useState(0);
-  const currentSlot = slots[slotIndex];
-  const item = kit?.items.find((it) => it.slot === currentSlot);
-  const candidates = [];
+  const item = activeItems[slotIndex];
+  const currentSlot = item?.slot;
+  const candidates = item?.id ? candidatesByItem[item.id] || [] : [];
 
   const selectedIds = picks[currentSlot] || [];
 
@@ -47,7 +136,7 @@ export default function Picker() {
   }
 
   function advance() {
-    if (slotIndex + 1 < slots.length) {
+    if (slotIndex + 1 < activeItems.length) {
       setSlotIndex(slotIndex + 1);
     } else {
       navigate(`/active/${id}`);
@@ -71,8 +160,11 @@ export default function Picker() {
   }
 
   if (!item || candidates.length === 0) {
-    const message =
-      "Listing search is being rebuilt. You can keep moving through the demo flow for now.";
+    const searchIsRunning =
+      searchStatus?.status === "pending" || searchStatus?.status === "searching";
+    const message = loadError || (searchIsRunning
+      ? `Searching for ${item?.label || "listings"}... candidates will appear here as they are saved.`
+      : "No candidates found for this item yet. You can skip ahead for now.");
 
     return (
       <StepFrame step={4} label="Pick" showBack={false}>
@@ -89,7 +181,9 @@ export default function Picker() {
         >
           <p>{message}</p>
           <Button onClick={advance} iconEnd={<ArrowRightIcon />}>
-            {slotIndex + 1 < slots.length ? "Skip · next slot" : "Start hunting"}
+            {slotIndex + 1 < activeItems.length
+              ? "Skip · next slot"
+              : "Start hunting"}
           </Button>
         </div>
       </StepFrame>
@@ -102,7 +196,7 @@ export default function Picker() {
   return (
     <StepFrame
       step={4}
-      label={`Pick · ${slotIndex + 1} of ${slots.length}`}
+      label={`Pick · ${slotIndex + 1} of ${activeItems.length}`}
       showBack={false}
     >
       <div className={styles.layout}>
@@ -212,7 +306,7 @@ export default function Picker() {
             disabled={selectedIds.length === 0}
             iconEnd={<ArrowRightIcon />}
           >
-            {slotIndex + 1 < slots.length
+            {slotIndex + 1 < activeItems.length
               ? "Bargain on these"
               : "Start hunting"}
           </Button>

@@ -136,6 +136,8 @@ export default function BuildKit() {
   const customPrefSeq = useRef(0);
   const [loadError, setLoadError] = useState(null);
   const [saveError, setSaveError] = useState(null);
+  const [huntBusy, setHuntBusy] = useState(false);
+  const [huntError, setHuntError] = useState(null);
 
   // BuildKit's UI still uses the demo display shape. Normalize the backend
   // shopping-list schema here until the edit/PATCH step gets its own contract.
@@ -277,8 +279,21 @@ export default function BuildKit() {
     });
   }
 
-  function startHunt() {
-    navigate(`/pick/${kit.kit_id}`);
+  async function startHunt() {
+    if (huntBusy) return;
+    const listId = kit.kit_id || id;
+    setHuntBusy(true);
+    setHuntError(null);
+
+    try {
+      await api.startSearch(listId);
+      navigate(`/pick/${listId}`);
+    } catch (e) {
+      console.warn("[shopping-lists] search failed:", e.message);
+      setHuntError("Could not start listing search. Check that the backend is running.");
+    } finally {
+      setHuntBusy(false);
+    }
   }
 
   return (
@@ -295,6 +310,7 @@ export default function BuildKit() {
             what's still on the list.
           </p>
           {saveError && <div style={{ color: "var(--ink-muted)", marginBottom: 16 }}>{saveError}</div>}
+          {huntError && <div style={{ color: "var(--ink-muted)", marginBottom: 16 }}>{huntError}</div>}
 
           <div className={styles.sectionLabel}>Essential</div>
           <div className={styles.itemList}>
@@ -373,8 +389,12 @@ export default function BuildKit() {
             </div>
 
             <div className={styles.actions}>
-              <Button onClick={startHunt} iconEnd={<ArrowRightIcon />}>
-                Start hunting
+              <Button
+                onClick={startHunt}
+                disabled={huntBusy}
+                iconEnd={<ArrowRightIcon />}
+              >
+                {huntBusy ? "Starting search" : "Start hunting"}
               </Button>
               <button className={styles.saveLink}>Save for later</button>
             </div>
