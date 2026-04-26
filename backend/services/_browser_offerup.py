@@ -7,6 +7,9 @@ The profile is populated once by `python scripts/offerup_login.py` and reused
 by the scraper and messenger.
 """
 
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 from playwright.async_api import BrowserContext
@@ -54,12 +57,69 @@ if (_origQuery) {
 """
 
 
+def _release_profile_lock() -> None:
+    """Kill any Chrome process using the OfferUp profile and remove lock files.
+
+    Chrome uses a SingletonLock file to prevent multiple instances from sharing
+    the same user-data-dir. If Chrome is already running with this profile,
+    Playwright's launch will fail with "Opening in existing browser session".
+    """
+    profile = CHROME_PROFILE.resolve()
+
+    # Remove Chrome's lock files so the new instance can claim the profile
+    for lock_name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+        lock_file = profile / lock_name
+        try:
+            lock_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    if sys.platform != "win32":
+        return
+
+    # On Windows, find and kill Chrome processes using this profile directory
+    profile_str = str(profile).lower()
+    try:
+        # List all chrome.exe processes with their command lines
+        result = subprocess.run(
+            ["wmic", "process", "where", "name='chrome.exe'", "get",
+             "ProcessId,CommandLine", "/format:list"],
+            capture_output=True, text=True, timeout=10,
+        )
+        lines = result.stdout.split("\n")
+        pid = None
+        cmd = None
+        for line in lines:
+            line = line.strip()
+            if line.startswith("CommandLine="):
+                cmd = line
+            elif line.startswith("ProcessId="):
+                pid = line.split("=", 1)[1].strip()
+                # Check if this Chrome process is using our profile
+                if cmd and profile_str in cmd.lower():
+                    print(f"[browser-offerup] killing Chrome pid={pid} (holds our profile)")
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", pid],
+                        capture_output=True, timeout=5,
+                    )
+                pid = None
+                cmd = None
+        time.sleep(1)  # Give Chrome time to release file locks
+    except Exception as e:
+        print(f"[browser-offerup] could not check for existing Chrome: {e}")
+
+
 async def launch_logged_in_chrome(p, *, headless: bool = False) -> BrowserContext:
     """Open the OfferUp-logged-in persistent profile with anti-automation cloak.
 
     `p` is the result of `async_playwright().__aenter__()`.
     """
     CHROME_PROFILE.mkdir(parents=True, exist_ok=True)
+
+    # Kill any existing Chrome holding this profile to avoid
+    # "Opening in existing browser session" errors
+    _release_profile_lock()
+
     context = await p.chromium.launch_persistent_context(
         user_data_dir=str(CHROME_PROFILE.resolve()),
         channel="chrome",
