@@ -30,17 +30,83 @@
 }
 
 .progressNote {
-  width: fit-content;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
   max-width: 620px;
   margin-bottom: 36px;
-  padding: 10px 13px;
+  padding: 14px 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--ink-muted);
+  background: linear-gradient(180deg, var(--surface) 0%, rgba(243, 239, 231, 0.55) 100%);
+  box-shadow: var(--shadow-sm);
+  animation: fadeUp 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.progressNoteRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progressDot {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.progressDot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--chip-accent);
+}
+
+.progressDotPulse {
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: var(--chip-accent);
+  opacity: 0.25;
+  animation: progressPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes progressPulse {
+  0%, 100% {
+    transform: scale(0.7);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+.progressNoteText {
+  flex: 1;
   font-size: 13.5px;
   line-height: 1.45;
-  box-shadow: var(--shadow-sm);
+  color: var(--ink-2);
+  min-width: 0;
+}
+
+.progressBar {
+  width: 100%;
+  height: 3px;
+  background: var(--surface-soft);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--chip-accent) 0%, #8a7fde 100%);
+  border-radius: 999px;
+  transition: width 360ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .questions {

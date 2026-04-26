@@ -63,7 +63,7 @@ export default function Picker() {
   if (!item || candidates.length === 0) {
     // No candidates seeded for this slot — let the user move on.
     return (
-      <StepFrame step={4} label="Pick">
+      <StepFrame step={4} label="Pick" showBack={false}>
         <div
           style={{
             padding: "60px 40px",
@@ -91,6 +91,7 @@ export default function Picker() {
     <StepFrame
       step={4}
       label={`Pick · ${slotIndex + 1} of ${slots.length}`}
+      showBack={false}
     >
       <div className={styles.layout}>
         <h1 className={styles.headline}>Pick the {itemNounPlural} you like.</h1>

@@ -186,7 +186,7 @@ export default function BuildKit() {
 
   if (!kit) {
     return (
-      <StepFrame step={3} label="Build kit">
+      <StepFrame step={3} label="Build kit" showBack={false}>
         {loadError ? (
           <div style={{ padding: 40, color: "var(--ink-muted)" }}>{loadError}</div>
         ) : (
@@ -237,7 +237,7 @@ export default function BuildKit() {
   }
 
   return (
-    <StepFrame step={3} label="Build kit">
+    <StepFrame step={3} label="Build kit" showBack={false}>
       <div className={styles.layout}>
         {/* LEFT: items */}
         <div>

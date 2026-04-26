@@ -73,13 +73,18 @@ export default function Followup() {
     [detectedHobby, detectedBudget, parsedIntent, queryText],
   );
 
-  const progressNote = useMemo(() => {
+  const progress = useMemo(() => {
     const asked = parsedIntent?.questions_asked_count;
     const max = parsedIntent?.max_followup_questions;
-    if (asked && max) {
-      return `Just a few more questions to dial in the kit. ${asked}/${max} max asked so far.`;
-    }
-    return "Just a few more questions to dial in the kit. If you don't know an answer, say so and I'll infer what I can.";
+    const hasCount = Boolean(asked && max);
+    return {
+      asked: hasCount ? asked : null,
+      max: hasCount ? max : null,
+      pct: hasCount ? Math.min(1, asked / max) : null,
+      message: hasCount
+        ? "Almost there — I'll keep asking until the kit is dialed in."
+        : "If you don't know an answer, say so and I'll infer the rest.",
+    };
   }, [parsedIntent]);
 
   const setAnswer = useCallback(
@@ -195,7 +200,7 @@ export default function Followup() {
   );
 
   return (
-    <StepFrame step={2} label="A few quick questions">
+    <StepFrame step={2} label="A few quick questions" showBack={false}>
       <div className={styles.layout}>
         {kicker && <div className={styles.kicker}>{kicker}</div>}
         <h1 className={styles.headline}>Before I start hunting…</h1>
@@ -203,7 +208,22 @@ export default function Followup() {
           A few quick clarifications so I can build the right kit for you.
           Answer in your own words — short or long, both work.
         </p>
-        <div className={styles.progressNote}>{progressNote}</div>
+        <div className={styles.progressNote}>
+          <div className={styles.progressNoteRow}>
+            <span className={styles.progressDot} aria-hidden="true">
+              <span className={styles.progressDotPulse} />
+            </span>
+            <span className={styles.progressNoteText}>{progress.message}</span>
+          </div>
+          {progress.pct != null && (
+            <div className={styles.progressBar} aria-hidden="true">
+              <div
+                className={styles.progressBarFill}
+                style={{ width: `${Math.max(6, progress.pct * 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
 
         <div className={styles.questions}>
           {displayQuestions.map((q, idx) => (
