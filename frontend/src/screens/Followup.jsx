@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import StepFrame from "../layout/StepFrame.jsx";
 import Button from "../primitives/Button.jsx";
 import { ArrowRightIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
-import { followupFor } from "../data/mocks.js";
 import { api } from "../api/client.js";
 import styles from "./Followup.module.css";
 
@@ -39,47 +38,23 @@ export default function Followup() {
   const { id } = useParams();
   const navigate = useNavigate();
   const {
+    setShoppingListId,
     queryText,
     parsedIntent,
     detectedHobby,
     detectedBudget,
     followupQuestions,
-    setFollowupQuestions,
     followupAnswers,
     setFollowupAnswers,
+    setKit,
   } = useKit();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Hydrate questions: real backend if available, mock fallback by hobby.
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (followupQuestions?.length) return;
-      try {
-        const intent = parsedIntent?.parsed_intent || parsedIntent;
-        if (intent) {
-          const result = await api.followup(intent);
-          if (!cancelled && Array.isArray(result?.questions)) {
-            setFollowupQuestions(normalizeQuestions(result.questions));
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn("[followup] backend offline, using mock:", e.message);
-      }
-      if (!cancelled) {
-        setFollowupQuestions(normalizeQuestions(followupFor(detectedHobby)));
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    detectedHobby,
-    parsedIntent,
-    followupQuestions?.length,
-    setFollowupQuestions,
-  ]);
+  const displayQuestions = useMemo(
+    () => normalizeQuestions(followupQuestions),
+    [followupQuestions],
+  );
 
   const kicker = useMemo(
     () =>
@@ -96,14 +71,49 @@ export default function Followup() {
     [followupAnswers, setFollowupAnswers],
   );
 
+  const completeQuery = useCallback(async (answers) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+
+    const answeredText = displayQuestions
+      .map((q, idx) => {
+        const answer = (answers[idx] || "").trim();
+        if (!answer) return null;
+        return `Q: ${q.question}\nA: ${answer}`;
+      })
+      .filter(Boolean)
+      .join("\n\n");
+    const followupText = answeredText || "No additional follow-up answers provided.";
+
+    try {
+      const result = await api.answerQuery(id, followupText);
+      setShoppingListId(result.shopping_list_id);
+      setKit({ ...result.shopping_list, kit_id: result.shopping_list_id });
+      navigate(`/kit/${result.shopping_list_id}`);
+    } catch (e) {
+      console.warn("[queries] answer failed:", e.message);
+      setError("Could not build this kit. Check that the backend is running.");
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    busy,
+    displayQuestions,
+    id,
+    navigate,
+    setKit,
+    setShoppingListId,
+  ]);
+
   const submit = useCallback(() => {
-    navigate(`/kit/${id}`);
-  }, [id, navigate]);
+    completeQuery(followupAnswers);
+  }, [completeQuery, followupAnswers]);
 
   const skip = useCallback(() => {
     setFollowupAnswers({});
-    navigate(`/kit/${id}`);
-  }, [id, navigate, setFollowupAnswers]);
+    completeQuery({});
+  }, [completeQuery, setFollowupAnswers]);
 
   const onKeyDown = useCallback(
     (e) => {
@@ -126,7 +136,7 @@ export default function Followup() {
         </p>
 
         <div className={styles.questions}>
-          {(followupQuestions || []).map((q, idx) => (
+          {displayQuestions.map((q, idx) => (
             <div key={idx} className={styles.question}>
               <div className={styles.number}>
                 {String(idx + 1).padStart(2, "0")}
@@ -157,11 +167,12 @@ export default function Followup() {
             <span className={styles.shortcut}>
               <kbd>⌘↵</kbd> when done
             </span>
-            <Button onClick={submit} iconEnd={<ArrowRightIcon />}>
-              Build my kit
+            <Button onClick={submit} disabled={busy} iconEnd={<ArrowRightIcon />}>
+              {busy ? "Building…" : "Build my kit"}
             </Button>
           </div>
         </div>
+        {error && <div className={styles.qRationale}>{error}</div>}
       </div>
     </StepFrame>
   );

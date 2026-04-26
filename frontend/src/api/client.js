@@ -15,7 +15,11 @@ async function request(path, { method = "GET", body, signal } = {}) {
 }
 
 export const api = {
-  parse: (text) => request("/parse", { method: "POST", body: { text } }),
-  followup: (parsed_intent) =>
-    request("/followup", { method: "POST", body: { parsed_intent } }),
+  createQuery: (userText) =>
+    request("/queries", { method: "POST", body: { user_text: userText } }),
+  answerQuery: (queryId, followupText) =>
+    request(`/queries/${queryId}/answers`, {
+      method: "POST",
+      body: { followup_text: followupText },
+    }),
 };

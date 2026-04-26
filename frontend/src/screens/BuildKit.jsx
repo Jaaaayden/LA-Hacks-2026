@@ -10,6 +10,7 @@ import { buildKitFor } from "../data/mocks.js";
 import styles from "./BuildKit.module.css";
 
 function fmtPrice(value) {
+  if (value == null) return "TBD";
   return `$${value}`;
 }
 
@@ -19,14 +20,69 @@ function sumActivePrices(items) {
     .reduce((acc, it) => acc + it.price_usd, 0);
 }
 
+function titleize(value) {
+  return String(value || "item")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function slotFor(item, index) {
+  return String(item.slot || item.item_type || `item-${index}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function flattenAttributes(attributes = []) {
+  return attributes.flatMap((attr, attrIndex) =>
+    (attr.value || []).map((entry, valueIndex) => ({
+      key: `${attr.key || attrIndex}-${valueIndex}`,
+      value: attr.key ? `${attr.key}: ${entry.value}` : entry.value,
+      reason: entry.justification || null,
+    })),
+  );
+}
+
+function isDisplayKit(kit) {
+  return kit?.items?.every(
+    (item) =>
+      item.slot &&
+      item.label &&
+      item.category &&
+      Array.isArray(item.preferences) &&
+      typeof item.price_usd === "number" &&
+      typeof item.checked === "boolean",
+  );
+}
+
+function normalizeKit(kit, { fallbackHobby, fallbackBudget, fallbackId }) {
+  return {
+    kit_id: kit.kit_id || fallbackId,
+    hobby: kit.hobby || fallbackHobby || "this hobby",
+    budget_usd: kit.budget_usd ?? fallbackBudget ?? null,
+    items: (kit.items || []).map((item, index) => {
+      const required = item.required ?? item.checked ?? true;
+      return {
+        ...item,
+        slot: item.slot || slotFor(item, index),
+        label: item.label || titleize(item.item_type),
+        category: item.category || (required ? "essential" : "nice_to_have"),
+        preferences: item.preferences || flattenAttributes(item.attributes),
+        price_usd: Number(item.price_usd) || 0,
+        checked: item.checked ?? required,
+      };
+    }),
+  };
+}
+
 export default function BuildKit() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { kit, setKit, detectedHobby, detectedBudget } = useKit();
+  const customPrefSeq = useRef(0);
 
-  // Build a hobby-aware kit on first arrival. If we detected a hobby in the
-  // brief, use its template; otherwise fall back to the generic kit. Real
-  // /kit/build response will replace this once the backend ships.
+  // BuildKit's UI still uses the demo display shape. Normalize the backend
+  // shopping-list schema here until the edit/PATCH step gets its own contract.
   useEffect(() => {
     if (!kit) {
       setKit(
@@ -35,8 +91,16 @@ export default function BuildKit() {
           budgetUsd: detectedBudget,
         }),
       );
+    } else if (!isDisplayKit(kit)) {
+      setKit(
+        normalizeKit(kit, {
+          fallbackHobby: detectedHobby,
+          fallbackBudget: detectedBudget,
+          fallbackId: id,
+        }),
+      );
     }
-  }, [kit, detectedHobby, detectedBudget, setKit]);
+  }, [id, kit, detectedHobby, detectedBudget, setKit]);
 
   const [editingSlot, setEditingSlot] = useState(null);
 
@@ -73,7 +137,8 @@ export default function BuildKit() {
     if (!trimmed) return;
     const target = kit.items.find((it) => it.slot === slot);
     if (!target) return;
-    const key = `custom-${Date.now()}`;
+    customPrefSeq.current += 1;
+    const key = `custom-${customPrefSeq.current}`;
     patchItem(slot, {
       preferences: [
         ...target.preferences,
@@ -92,7 +157,7 @@ export default function BuildKit() {
         {/* LEFT: items */}
         <div>
           <div className={styles.kicker}>
-            {kit.hobby?.toUpperCase()} · ${kit.budget_usd} BUDGET
+            {kit.hobby?.toUpperCase()} · {fmtPrice(kit.budget_usd)} BUDGET
           </div>
           <h1 className={styles.headline}>Build your kit.</h1>
           <p className={styles.subhead}>
@@ -144,7 +209,7 @@ export default function BuildKit() {
               <div className={styles.totalLabel}>Estimated total</div>
               <div className={styles.totalValue}>
                 {fmtPrice(total)}{" "}
-                <span className={styles.totalSub}>of ${kit.budget_usd}</span>
+                <span className={styles.totalSub}>of {fmtPrice(kit.budget_usd)}</span>
               </div>
             </div>
             <div className={styles.totalNote}>
@@ -200,10 +265,6 @@ function ItemRow({
   const [addingPref, setAddingPref] = useState(false);
   const [prefDraft, setPrefDraft] = useState("");
   const prefInputRef = useRef(null);
-
-  useEffect(() => {
-    setDraftPrice(item.price_usd);
-  }, [item.price_usd]);
 
   useEffect(() => {
     if (addingPref) prefInputRef.current?.focus();

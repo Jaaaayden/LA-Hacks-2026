@@ -127,11 +127,16 @@ function parseClientSide(text) {
 export default function Intake() {
   const navigate = useNavigate();
   const {
+    setQueryId,
+    setShoppingListId,
     setQueryText,
     setParsedIntent,
     setDetectedHobby,
     setDetectedBudget,
+    setFollowupQuestions,
+    setFollowupAnswers,
     setKit,
+    setPicks,
   } = useKit();
   const editorRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -161,30 +166,41 @@ export default function Intake() {
     setDetectedHobby(local.hobby);
     setDetectedBudget(local.budget_usd);
     // Force fresh kit on each submit so a new query rebuilds the kit.
+    setQueryId(null);
+    setShoppingListId(null);
+    setFollowupQuestions([]);
+    setFollowupAnswers({});
     setKit(null);
+    setPicks({});
 
     try {
-      const result = await api.parse(text);
+      const result = await api.createQuery(text);
+      setQueryId(result.query_id);
       setParsedIntent(result);
+      setFollowupQuestions(result.followup_questions || []);
       if (result.parsed_intent?.hobby) setDetectedHobby(result.parsed_intent.hobby);
       if (result.parsed_intent?.budget_usd != null)
         setDetectedBudget(result.parsed_intent.budget_usd);
-      const id = result.query_id || "mock-query-1";
-      navigate(`/followup/${id}`);
+      navigate(`/followup/${result.query_id}`);
     } catch (e) {
-      console.warn("[parse] backend offline, using client-side parse:", e.message);
-      navigate(`/followup/local-${Date.now()}`);
+      console.warn("[queries] create failed:", e.message);
+      setError("Could not start this search. Check that the backend is running.");
     } finally {
       setBusy(false);
     }
   }, [
     busy,
     navigate,
+    setFollowupAnswers,
+    setFollowupQuestions,
     setKit,
+    setPicks,
     setDetectedBudget,
     setDetectedHobby,
     setParsedIntent,
+    setQueryId,
     setQueryText,
+    setShoppingListId,
   ]);
 
   const onKeyDown = useCallback(

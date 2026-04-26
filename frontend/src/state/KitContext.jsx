@@ -3,6 +3,8 @@ import { createContext, useContext, useMemo, useState } from "react";
 const KitContext = createContext(null);
 
 export function KitProvider({ children }) {
+  const [queryId, setQueryId] = useState(null);
+  const [shoppingListId, setShoppingListId] = useState(null);
   const [parsedIntent, setParsedIntent] = useState(null);
   const [queryText, setQueryText] = useState("");
   const [detectedHobby, setDetectedHobby] = useState(null);
@@ -14,6 +16,10 @@ export function KitProvider({ children }) {
 
   const value = useMemo(
     () => ({
+      queryId,
+      setQueryId,
+      shoppingListId,
+      setShoppingListId,
       parsedIntent,
       setParsedIntent,
       queryText,
@@ -32,6 +38,8 @@ export function KitProvider({ children }) {
       setPicks,
     }),
     [
+      queryId,
+      shoppingListId,
       parsedIntent,
       queryText,
       detectedHobby,
