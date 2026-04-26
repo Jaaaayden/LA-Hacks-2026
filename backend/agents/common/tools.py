@@ -262,7 +262,10 @@ def format_kit_with_listings(
 
         if not ranked:
             lines.append("")
-            lines.append("_(no listings found yet)_")
+            lines.append(
+                "_Hunting for fresh listings — say `go live` to "
+                "scrape OfferUp for this item right now._"
+            )
             continue
 
         for i, lst in enumerate(ranked[:3]):

@@ -175,9 +175,43 @@ async def mongo_search(
                 "item_type": {"$regex": re.escape(head), "$options": "i"},
             }
             docs = await _find_raw(q)
-            return _rank(docs, attributes, limit)
+            if docs:
+                return _rank(docs, attributes, limit)
+
+    # Tier 4: cross-hobby fallback for genuinely shared gear only. Helmets,
+    # goggles, gloves, jackets, etc. are interchangeable between snow
+    # sports; boots / bindings / boards are sport-specific (a skier can't
+    # use snowboard boots). The whitelist keeps "0 listings" from showing
+    # for shared items while preventing wrong-sport boards/boots from
+    # leaking across.
+    if item_type:
+        tokens = _meaningful_tokens(item_type)
+        if tokens:
+            head = tokens[-1]
+            if head in _CROSS_HOBBY_ITEMS:
+                q = {
+                    **floor_clause,
+                    "item_type": {"$regex": re.escape(head), "$options": "i"},
+                }
+                docs = await _find_raw(q)
+                if docs:
+                    return _rank(docs, attributes, limit)
 
     return []
+
+
+# Items that work across hobbies — head noun match only, no sport-specific
+# fit concerns. Deliberately excludes anything sport-specific OR generic
+# enough that a wrong-sport version would be unhelpful: bags (camera bag
+# vs climbing chalk bag vs board bag are all different products), packs,
+# boots, bindings, board, ski, surfboard, paddle, leash, fins.
+_CROSS_HOBBY_ITEMS = frozenset({
+    "helmet", "goggles", "gloves", "glove", "mittens",
+    "jacket", "pants", "bib", "bibs",
+    "beanie", "hat", "balaclava",
+    "bottle", "thermos",
+    "socks", "baselayer", "baselayers",
+})
 
 
 def _serialize_listing(doc: dict[str, Any]) -> dict[str, Any]:
