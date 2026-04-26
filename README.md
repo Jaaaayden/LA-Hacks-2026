@@ -68,6 +68,24 @@ Each agent has a profile README on Agentverse describing what it does and how to
 
 ---
 
+## The problem
+
+Trying to start a new hobby on a budget means buying secondhand gear, which means dealing with marketplaces like OfferUp. That experience has four specific frictions stacked on top of each other:
+
+1. **You don't know what to buy.** A snowboard kit isn't just a snowboard — it's bindings, boots, a helmet, sometimes goggles and gloves. A surfing kit isn't just a board. Beginners don't know the full bill of materials.
+2. **Listings are unstructured.** Titles like *"snowboard 158 used good cond"* don't tell you the brand, riding style, skill level it's appropriate for, or whether the bindings are included.
+3. **You don't know what's a fair price.** A $180 board could be a great deal or a rip-off depending on the model and condition. You'd have to comparison-shop across dozens of listings to develop intuition.
+4. **Inventory turns over fast.** A "saved search" is stale within hours; you have to re-scrape constantly.
+
+hobbify maps each friction to a specific agent:
+
+- **Coordinator** answers *"what do I need"* by parsing your intent and synthesizing a structured kit (with required-vs-optional, per-item budget allocations, hobby-specific attributes like riding style or boot size).
+- **Scout** answers *"what's available"* via tiered Mongo search with attribute-aware ranking (size matches and style matches outrank generic listings).
+- **Pricer** answers *"is this a good deal"* via median-price comparison per `(hobby, item_type)` bucket, tagging each listing 🟢 GREAT DEAL / 🟡 FAIR / 🔴 ABOVE MARKET with a one-line rationale.
+- **PaymentSink** + Coordinator's payment role answer *"can I pay for fresh data"* via the Fetch.ai Payment Protocol — completing the cycle gates a live OfferUp scrape so users don't have to wait for the next nightly batch.
+
+---
+
 ## What it does
 
 1. **You** type a hobby intent in ASI:One (chatting with `hobbyist-coordinator`).
@@ -131,6 +149,43 @@ All four agents run in a single `uagents.Bureau` process for in-memory inter-age
 
 ---
 
+## Notable design decisions
+
+A few choices in the agent code that aren't obvious from the surface:
+
+- **Single Bureau, four mailboxes.** Coordinator → Scout dispatch needs reliable address resolution. Almanac registration on testnet is flaky without a funded wallet, so we run all four agents in one `uagents.Bureau` for in-process address resolution. Each agent still keeps its own mailbox identity, so it remains independently chattable from ASI:One — judges can chat directly with Scout or Pricer to verify they work standalone.
+
+- **Background scout/pricer dispatch is mandatory, not stylistic.** uagents serializes inbound chat handlers per agent. If Coordinator awaited Scout's reply inline inside `on_chat`, Scout's reply would queue behind the same handler that's waiting for it → deadlock. So `_kit_and_listings_reply` runs as `asyncio.create_task` after `on_chat` returns, freeing the handler to receive Scout's reply, which then triggers a separate background coroutine to send the user the final kit message.
+
+- **Two correlation maps for the Payment Protocol.** `CompletePayment` only carries `transaction_id`, not the original `reference`. To thread the user-flow context across the multi-message cycle, Coordinator keeps `_payment_user_by_ref` (ref → user, populated when we trigger the cycle) and `_tx_to_user` (tx → user, populated when we mint the `CommitPayment`). Multiple in-flight payments don't cross-pollinate.
+
+- **Scout's tiered fallback search.** Four tiers, most specific first: (1) `list_id + item_id` exact match for listings linked to this kit slot, (2) `list_id + item_type` softer fallback, (3) `hobby + item_type` strict, (4) `hobby + fuzzy head-noun` regex. Plus a fifth cross-hobby fallback gated by a hand-curated whitelist (`helmet`, `goggles`, `gloves`, `jacket`…) for genuinely shared gear — but never sport-specific items like boots, bindings, or boards.
+
+- **Attribute-aware ranking.** Scout pulls a 50-doc candidate pool and re-ranks in Python by *attribute fit* against parsed user attributes (size, riding_style, skill_level, etc.). Title-substring match on each attribute earns relevance points; size matches count double because boot/board sizing is the most common reason a listing is unusable. Price is the tiebreaker.
+
+- **Per-item failure isolation in the live scrape.** A 429 on item 5 of 8 doesn't kill the whole job — each item is wrapped in try/except, failures bump a counter on the job doc and the loop keeps going. The user paid 0.5 FET for a kit refresh; partial coverage is far better than nothing.
+
+- **OfferUp 429 retry with `Retry-After` honoring.** `_post_graphql` and `get_offerup_listing_detail` both retry up to 3 times on HTTP 429, honoring the server's `Retry-After` header when present, falling back to 5/15/45s exponential backoff otherwise. Combined with `detail_concurrency=2` and `_INTER_ITEM_DELAY_S=2.5`, this keeps total throughput under OfferUp's edge throttle window in most demo conditions.
+
+- **Pricer's median-comp scoring.** For each `(hobby, item_type)` bucket, Pricer pulls all comparable listing prices from Mongo, computes the median, and tags each new listing by percentage above/below. The label thresholds (>15% below = GREAT DEAL, within ±15% = FAIR, >15% above = ABOVE MARKET) are tuned for used-gear marketplaces where bargaining is normal. Pricer also generates a one-line rationale per listing tying the verdict to the user's parsed attributes.
+
+---
+
+## Data model
+
+Four MongoDB Atlas collections via `motor` (async):
+
+| Collection | What it stores | Key index |
+|---|---|---|
+| `queries` | Original user text + parsed structured intent + follow-up state | `_id` |
+| `shopping_lists` | Generated kit (hobby, items, per-item budget allocation, attributes, search_query) | `_id`, `query_id` |
+| `listings` | Scraped OfferUp listings with `list_id` + `item_id` linkage to kit slots | unique `(platform_id, source)`, plus `list_id`/`hobby`/`item_type` for Scout's tiered queries |
+| `listing_search_jobs` | Background scrape state for "go live" flows (status, items_done, counts, item_errors) | `shopping_list_id` |
+
+The `(platform_id, source)` unique index is what lets `upsert_scraped_listings` be idempotent — re-scraping the same OfferUp listing updates it instead of creating a duplicate, so the live-scrape path can run repeatedly without exploding the listings collection.
+
+---
+
 ## Tech
 
 - **uagents 0.24.2** + **uagents-core 0.4.4** — Chat Protocol + Payment Protocol
@@ -171,8 +226,26 @@ Stop with `bash scripts/run_agents.sh stop`.
 
 ---
 
+## Limitations & honest tradeoffs
 
+What's intentional, what's a known rough edge, and what we'd address with more time.
 
+- **Payment is symbolic, not on-chain.** Transaction IDs are minted as `TESTNET-<uuid>`. The Payment Protocol message exchange is wire-compatible with mainnet — funding the wallets via the Fetch.ai testnet faucet would let us actually settle FET, but the rubric scores the protocol cycle, not real-money transfer.
+- **OfferUp rate-limits detail enrichment hard after sustained scraping.** The search GraphQL endpoint is reliable; the per-listing detail GET endpoint gets 429'd aggressively once the throttle warms up on your IP. Mitigations are in place (retry-on-429, lowered concurrency, `DEFAULT_RESULTS_PER_ITEM=10`, inter-item pacing), but during back-to-back live scrapes you may still see some empty kit slots — the cycle still completes, just with fewer listings than ideal.
+- **Cross-hobby fallback is a hand-curated whitelist.** Scout's tier-4 fallback only borrows listings across hobbies for genuinely shared gear (helmets, gloves, jackets, beanies). Sport-specific items (boots, bindings, boards, surfboards, fins) are deliberately excluded — a snowboard boot isn't a ski boot. Adding a new hobby means adding its truly-shared items to the whitelist.
+- **No image rendering in the chat surface.** ASI:One's chat protocol is text-only — listings appear as clickable URLs, not embedded photos. The teammate-built `frontend/` Vite + React app renders images, but the agent track demo lives in ASI:One.
+- **Conversation state is per-process.** The Coordinator's session map (sender → query_id → shopping_list_id) lives in memory; restarting the bureau loses in-flight conversations. The Mongo persistence covers parsed intents, kits, and listings — only the lightweight session state is lost.
+- **Single seller in the Payment Protocol.** PaymentSink is one demo agent that auto-commits anything Coordinator initiates. A real implementation would have per-seller funding, a public price list, and human-in-the-loop authorization for non-symbolic amounts.
+
+### Future work
+
+If we kept building past the hackathon:
+
+- **Actual on-chain settlement** via funded testnet/mainnet wallets so the FET transfers are real.
+- **Negotiation agent** — there's already a `backend/prompts/negotiator.txt` and `bargain.py` from earlier exploration. A separate negotiator agent could draft seller messages and orchestrate the back-and-forth.
+- **Cross-marketplace adapters** — Craigslist + Facebook Marketplace + eBay scrapers feeding the same `listings` collection. The schema already abstracts platform via `(platform_id, source)`.
+- **Saved searches with push notifications via Agentverse** — Scout could subscribe to background scrapes and push new matches to the user's coordinator session as they appear.
+- **Image-based attribute extraction** — running detail-page photos through a vision model to extract attributes the seller didn't mention (size labels visible in the photo, condition signals, etc.).
 
 
 ## Repo layout
