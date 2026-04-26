@@ -118,6 +118,7 @@ class BargainItem(BaseModel):
     status: Literal["queued", "messaging", "agreed", "gave_up", "error"] = "queued"
     conversation: list[dict[str, str]] = Field(default_factory=list)
     last_message: str | None = None
+    last_seller_message: str | None = None
     added_at: datetime
     updated_at: datetime
     error: str | None = None
