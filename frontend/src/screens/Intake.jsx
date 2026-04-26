@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StepFrame from "../layout/StepFrame.jsx";
 import Button from "../primitives/Button.jsx";
@@ -7,7 +7,7 @@ import { ArrowRightIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
 import { api } from "../api/client.js";
 import { canonicalHobby } from "../data/mocks.js";
-import { listSavedKits, deleteSavedKit } from "../state/savedKits.js";
+import { listSavedKits, deleteSavedKit, saveKit } from "../state/savedKits.js";
 import styles from "./Intake.module.css";
 
 const HOBBY_WORDS = [
@@ -143,28 +143,131 @@ export default function Intake() {
   const editorRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [savedKits, setSavedKits] = useState([]);
-
-  useEffect(() => {
-    setSavedKits(listSavedKits());
-  }, []);
+  const [savedKits, setSavedKits] = useState(() => listSavedKits());
+  const [resumingId, setResumingId] = useState(null);
 
   const resume = useCallback(
-    (entry) => {
-      setQueryText(entry.queryText || "");
-      setQueryId(entry.queryId || null);
-      setShoppingListId(entry.shoppingListId || null);
-      setParsedIntent(entry.parsedIntent || null);
-      setDetectedHobby(entry.detectedHobby || entry.hobby || null);
-      setDetectedBudget(entry.detectedBudget ?? entry.budget_usd ?? null);
-      setFollowupQuestions(entry.followupQuestions || []);
-      setFollowupAnswers(entry.followupAnswers || {});
-      setKit(entry.kit || null);
-      setPicks({});
-      navigate(`/kit/${entry.id}`);
+    async (entry) => {
+      if (resumingId) return;
+      setResumingId(entry.id);
+      setError(null);
+
+      const applyEntry = (nextEntry, route) => {
+        setQueryText(nextEntry.queryText || "");
+        setQueryId(nextEntry.queryId || null);
+        setShoppingListId(nextEntry.shoppingListId || null);
+        setParsedIntent(nextEntry.parsedIntent || null);
+        setDetectedHobby(nextEntry.detectedHobby || nextEntry.hobby || null);
+        setDetectedBudget(nextEntry.detectedBudget ?? nextEntry.budget_usd ?? null);
+        setFollowupQuestions(nextEntry.followupQuestions || []);
+        setFollowupAnswers(nextEntry.followupAnswers || {});
+        setKit(nextEntry.kit || null);
+        setPicks({});
+        navigate(route || nextEntry.route || `/kit/${nextEntry.id}`);
+      };
+
+      try {
+        if (entry.queryId) {
+          const query = await api.getQuery(entry.queryId);
+          const shoppingListId = query.shopping_list_id || entry.shoppingListId;
+          if (shoppingListId) {
+            const shoppingList = await api.getShoppingList(shoppingListId);
+            const freshEntry = {
+              ...entry,
+              id: shoppingListId,
+              route: `/kit/${shoppingListId}`,
+              queryId: entry.queryId,
+              shoppingListId,
+              queryText: query.raw_messages?.[0] || entry.queryText || "",
+              parsedIntent: {
+                query_id: entry.queryId,
+                parsed_intent: query.parsed_intent,
+                followup_questions: query.followup_questions || [],
+                status: query.status,
+                questions_asked_count: query.questions_asked_count,
+                max_followup_questions: query.max_followup_questions,
+                done: true,
+              },
+              detectedHobby: query.parsed_intent?.hobby || shoppingList.hobby,
+              detectedBudget:
+                query.parsed_intent?.budget_usd ?? shoppingList.budget_usd ?? null,
+              hobby: shoppingList.hobby,
+              budget_usd: shoppingList.budget_usd,
+              followupQuestions: [],
+              followupAnswers: entry.followupAnswers || {},
+              kit: { ...shoppingList, kit_id: shoppingListId },
+              status: query.status,
+            };
+            saveKit(freshEntry);
+            setSavedKits(listSavedKits());
+            applyEntry(freshEntry, freshEntry.route);
+            return;
+          }
+
+          const freshEntry = {
+            ...entry,
+            id: entry.queryId,
+            route: `/followup/${entry.queryId}`,
+            queryText: query.raw_messages?.[0] || entry.queryText || "",
+            parsedIntent: {
+              query_id: entry.queryId,
+              parsed_intent: query.parsed_intent,
+              followup_questions: query.followup_questions || [],
+              status: query.status,
+              questions_asked_count: query.questions_asked_count,
+              max_followup_questions: query.max_followup_questions,
+              done: false,
+            },
+            detectedHobby: query.parsed_intent?.hobby || entry.detectedHobby || null,
+            detectedBudget:
+              query.parsed_intent?.budget_usd ?? entry.detectedBudget ?? null,
+            followupQuestions: query.followup_questions || [],
+            followupAnswers: entry.followupAnswers || {},
+            kit: null,
+            status: query.status,
+          };
+          saveKit(freshEntry);
+          setSavedKits(listSavedKits());
+          applyEntry(freshEntry, freshEntry.route);
+          return;
+        }
+
+        if (entry.shoppingListId || entry.id) {
+          const shoppingListId = entry.shoppingListId || entry.id;
+          const shoppingList = await api.getShoppingList(shoppingListId);
+          const freshEntry = {
+            ...entry,
+            id: shoppingListId,
+            route: `/kit/${shoppingListId}`,
+            queryId: shoppingList.query_id || entry.queryId || null,
+            shoppingListId,
+            detectedHobby: shoppingList.hobby,
+            detectedBudget: shoppingList.budget_usd ?? null,
+            hobby: shoppingList.hobby,
+            budget_usd: shoppingList.budget_usd,
+            kit: { ...shoppingList, kit_id: shoppingListId },
+          };
+          saveKit(freshEntry);
+          setSavedKits(listSavedKits());
+          applyEntry(freshEntry, freshEntry.route);
+          return;
+        }
+
+        applyEntry(entry, entry.route);
+      } catch (e) {
+        console.warn("[queries] resume failed:", e.message);
+        if (entry.kit || entry.followupQuestions?.length) {
+          applyEntry(entry, entry.route);
+        } else {
+          setError("Could not resume this search. Check that the backend is running.");
+        }
+      } finally {
+        setResumingId(null);
+      }
     },
     [
       navigate,
+      resumingId,
       setDetectedBudget,
       setDetectedHobby,
       setFollowupAnswers,
@@ -216,12 +319,30 @@ export default function Intake() {
 
     try {
       const result = await api.createQuery(text);
+      const entry = {
+        id: result.query_id,
+        route: `/followup/${result.query_id}`,
+        queryId: result.query_id,
+        shoppingListId: null,
+        queryText: text,
+        parsedIntent: result,
+        detectedHobby: result.parsed_intent?.hobby || local.hobby,
+        detectedBudget: result.parsed_intent?.budget_usd ?? local.budget_usd,
+        hobby: result.parsed_intent?.hobby || local.hobby,
+        budget_usd: result.parsed_intent?.budget_usd ?? local.budget_usd,
+        followupQuestions: result.followup_questions || [],
+        followupAnswers: {},
+        kit: null,
+        status: result.status,
+      };
       setQueryId(result.query_id);
       setParsedIntent(result);
       setFollowupQuestions(result.followup_questions || []);
       if (result.parsed_intent?.hobby) setDetectedHobby(result.parsed_intent.hobby);
       if (result.parsed_intent?.budget_usd != null)
         setDetectedBudget(result.parsed_intent.budget_usd);
+      saveKit(entry);
+      setSavedKits(listSavedKits());
       navigate(`/followup/${result.query_id}`);
     } catch (e) {
       console.warn("[queries] create failed:", e.message);
@@ -299,6 +420,7 @@ export default function Intake() {
                     className={styles.savedItem}
                     style={{ animationDelay: `${idx * 50}ms` }}
                     onClick={() => resume(entry)}
+                    disabled={Boolean(resumingId)}
                   >
                     <div className={styles.savedItemMain}>
                       <div className={styles.savedItemTitle}>
@@ -313,6 +435,9 @@ export default function Intake() {
                     </div>
                     <div className={styles.savedItemRight}>
                       <span className={styles.savedItemDate}>{relativeTime(entry.savedAt)}</span>
+                      {resumingId === entry.id && (
+                        <span className={styles.savedItemDate}>opening...</span>
+                      )}
                       <span
                         className={styles.savedItemRemove}
                         role="button"

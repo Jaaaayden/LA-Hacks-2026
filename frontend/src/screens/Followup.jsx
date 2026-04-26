@@ -7,6 +7,7 @@ import BuildingOverlay from "../primitives/BuildingOverlay.jsx";
 import { ArrowRightIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
 import { api } from "../api/client.js";
+import { saveKit } from "../state/savedKits.js";
 import styles from "./Followup.module.css";
 
 // Normalize whatever the backend or mock gives us into {question, rationale, placeholder}.
@@ -111,11 +112,45 @@ export default function Followup() {
       if (result.done === false) {
         setFollowupQuestions(result.followup_questions || []);
         setFollowupAnswers({});
+        saveKit({
+          id,
+          route: `/followup/${id}`,
+          queryId: id,
+          shoppingListId: null,
+          queryText,
+          parsedIntent: result,
+          detectedHobby: result.parsed_intent?.hobby || detectedHobby || null,
+          detectedBudget:
+            result.parsed_intent?.budget_usd ?? detectedBudget ?? null,
+          hobby: result.parsed_intent?.hobby || detectedHobby || null,
+          budget_usd: result.parsed_intent?.budget_usd ?? detectedBudget ?? null,
+          followupQuestions: result.followup_questions || [],
+          followupAnswers: {},
+          kit: null,
+          status: result.status,
+        });
         return;
       }
 
       setShoppingListId(result.shopping_list_id);
       setKit({ ...result.shopping_list, kit_id: result.shopping_list_id });
+      saveKit({
+        id: result.shopping_list_id,
+        route: `/kit/${result.shopping_list_id}`,
+        queryId: id,
+        shoppingListId: result.shopping_list_id,
+        queryText,
+        parsedIntent: result,
+        detectedHobby: result.parsed_intent?.hobby || result.shopping_list?.hobby,
+        detectedBudget:
+          result.parsed_intent?.budget_usd ?? result.shopping_list?.budget_usd ?? null,
+        hobby: result.shopping_list?.hobby,
+        budget_usd: result.shopping_list?.budget_usd,
+        followupQuestions: [],
+        followupAnswers: answers,
+        kit: { ...result.shopping_list, kit_id: result.shopping_list_id },
+        status: result.status,
+      });
       navigate(`/kit/${result.shopping_list_id}`);
     } catch (e) {
       console.warn("[queries] answer failed:", e.message);
@@ -135,6 +170,9 @@ export default function Followup() {
     setKit,
     setParsedIntent,
     setShoppingListId,
+    queryText,
+    detectedHobby,
+    detectedBudget,
   ]);
 
   const submit = useCallback(() => {

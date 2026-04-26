@@ -25,17 +25,28 @@ function writeAll(entries) {
   }
 }
 
+function isBackendBacked(entry) {
+  return Boolean(entry?.queryId || entry?.shoppingListId);
+}
+
 export function listSavedKits() {
-  return readAll().sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  const entries = readAll().filter(isBackendBacked);
+  writeAll(entries);
+  return entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 }
 
 export function getSavedKit(id) {
-  return readAll().find((k) => k.id === id) || null;
+  return readAll().find((k) => k.id === id && isBackendBacked(k)) || null;
 }
 
 export function saveKit(entry) {
-  if (!entry?.id) return;
-  const existing = readAll().filter((k) => k.id !== entry.id);
+  if (!entry?.id || !isBackendBacked(entry)) return;
+  const existing = readAll().filter(
+    (k) =>
+      k.id !== entry.id &&
+      (!entry.queryId || k.queryId !== entry.queryId) &&
+      (!entry.shoppingListId || k.shoppingListId !== entry.shoppingListId),
+  );
   const next = [
     { ...entry, savedAt: Date.now() },
     ...existing,

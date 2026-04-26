@@ -8,7 +8,7 @@ import KitSkeleton from "../primitives/KitSkeleton.jsx";
 import { ArrowRightIcon, CheckIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
 import { saveKit } from "../state/savedKits.js";
-import { buildKitFor } from "../data/mocks.js";
+import { api } from "../api/client.js";
 import styles from "./BuildKit.module.css";
 
 function fmtPrice(value) {
@@ -59,6 +59,7 @@ function isDisplayKit(kit) {
 
 function normalizeKit(kit, { fallbackHobby, fallbackBudget, fallbackId }) {
   return {
+    ...kit,
     kit_id: kit.kit_id || fallbackId,
     hobby: kit.hobby || fallbackHobby || "this hobby",
     budget_usd: kit.budget_usd ?? fallbackBudget ?? null,
@@ -84,6 +85,8 @@ export default function BuildKit() {
   const {
     kit,
     setKit,
+    setQueryId,
+    setShoppingListId,
     detectedHobby,
     detectedBudget,
     queryText,
@@ -94,18 +97,33 @@ export default function BuildKit() {
     followupAnswers,
   } = useKit();
   const customPrefSeq = useRef(0);
+  const [loadError, setLoadError] = useState(null);
 
   // BuildKit's UI still uses the demo display shape. Normalize the backend
   // shopping-list schema here until the edit/PATCH step gets its own contract.
   useEffect(() => {
     if (!kit) {
-      setKit(
-        buildKitFor({
-          hobby: detectedHobby,
-          budgetUsd: detectedBudget,
-        }),
-      );
-    } else if (!isDisplayKit(kit)) {
+      let cancelled = false;
+      setLoadError(null);
+      api
+        .getShoppingList(id)
+        .then((shoppingList) => {
+          if (cancelled) return;
+          setShoppingListId(id);
+          if (shoppingList.query_id) setQueryId(shoppingList.query_id);
+          setKit({ ...shoppingList, kit_id: id });
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          console.warn("[shopping-lists] load failed:", e.message);
+          setLoadError("Could not load this kit from the backend.");
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!isDisplayKit(kit)) {
       setKit(
         normalizeKit(kit, {
           fallbackHobby: detectedHobby,
@@ -114,7 +132,15 @@ export default function BuildKit() {
         }),
       );
     }
-  }, [id, kit, detectedHobby, detectedBudget, setKit]);
+  }, [
+    id,
+    kit,
+    detectedHobby,
+    detectedBudget,
+    setKit,
+    setQueryId,
+    setShoppingListId,
+  ]);
 
   const [editingSlot, setEditingSlot] = useState(null);
 
@@ -127,13 +153,17 @@ export default function BuildKit() {
   // re-running the intake flow. Only save once the kit is in display shape.
   useEffect(() => {
     if (!kit || !isDisplayKit(kit)) return;
+    const backendQueryId = queryId || kit.query_id;
+    const backendShoppingListId = shoppingListId || kit.kit_id;
+    if (!backendQueryId && !backendShoppingListId) return;
     saveKit({
       id: kit.kit_id || id,
+      route: `/kit/${kit.kit_id || id}`,
       hobby: kit.hobby,
       budget_usd: kit.budget_usd,
       queryText,
-      queryId,
-      shoppingListId,
+      queryId: backendQueryId,
+      shoppingListId: backendShoppingListId,
       parsedIntent,
       detectedHobby,
       detectedBudget,
@@ -157,7 +187,11 @@ export default function BuildKit() {
   if (!kit) {
     return (
       <StepFrame step={3} label="Build kit">
-        <KitSkeleton />
+        {loadError ? (
+          <div style={{ padding: 40, color: "var(--ink-muted)" }}>{loadError}</div>
+        ) : (
+          <KitSkeleton />
+        )}
       </StepFrame>
     );
   }

@@ -17,9 +17,12 @@ async function request(path, { method = "GET", body, signal } = {}) {
 export const api = {
   createQuery: (userText) =>
     request("/queries", { method: "POST", body: { user_text: userText } }),
+  getQuery: (queryId) => request(`/queries/${queryId}`),
   answerQuery: (queryId, followupText) =>
     request(`/queries/${queryId}/answers`, {
       method: "POST",
       body: { followup_text: followupText },
     }),
+  getShoppingList: (shoppingListId) =>
+    request(`/shopping-lists/${shoppingListId}`),
 };
