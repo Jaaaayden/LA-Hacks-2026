@@ -4,8 +4,10 @@ import StepFrame from "../layout/StepFrame.jsx";
 import Button from "../primitives/Button.jsx";
 import { Chip, AddChip } from "../primitives/Chip.jsx";
 import ImageWithFallback from "../primitives/ImageWithFallback.jsx";
+import KitSkeleton from "../primitives/KitSkeleton.jsx";
 import { ArrowRightIcon, CheckIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
+import { saveKit } from "../state/savedKits.js";
 import { buildKitFor } from "../data/mocks.js";
 import styles from "./BuildKit.module.css";
 
@@ -79,7 +81,18 @@ function normalizeKit(kit, { fallbackHobby, fallbackBudget, fallbackId }) {
 export default function BuildKit() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { kit, setKit, detectedHobby, detectedBudget } = useKit();
+  const {
+    kit,
+    setKit,
+    detectedHobby,
+    detectedBudget,
+    queryText,
+    queryId,
+    shoppingListId,
+    parsedIntent,
+    followupQuestions,
+    followupAnswers,
+  } = useKit();
   const customPrefSeq = useRef(0);
 
   // BuildKit's UI still uses the demo display shape. Normalize the backend
@@ -110,7 +123,44 @@ export default function BuildKit() {
     [kit],
   );
 
-  if (!kit) return null;
+  // Persist to localStorage so the user can resume this kit later instead of
+  // re-running the intake flow. Only save once the kit is in display shape.
+  useEffect(() => {
+    if (!kit || !isDisplayKit(kit)) return;
+    saveKit({
+      id: kit.kit_id || id,
+      hobby: kit.hobby,
+      budget_usd: kit.budget_usd,
+      queryText,
+      queryId,
+      shoppingListId,
+      parsedIntent,
+      detectedHobby,
+      detectedBudget,
+      followupQuestions,
+      followupAnswers,
+      kit,
+    });
+  }, [
+    kit,
+    id,
+    queryText,
+    queryId,
+    shoppingListId,
+    parsedIntent,
+    detectedHobby,
+    detectedBudget,
+    followupQuestions,
+    followupAnswers,
+  ]);
+
+  if (!kit) {
+    return (
+      <StepFrame step={3} label="Build kit">
+        <KitSkeleton />
+      </StepFrame>
+    );
+  }
 
   const essentials = kit.items.filter((it) => it.category === "essential");
   const niceToHave = kit.items.filter((it) => it.category === "nice_to_have");
@@ -168,9 +218,10 @@ export default function BuildKit() {
 
           <div className={styles.sectionLabel}>Essential</div>
           <div className={styles.itemList}>
-            {essentials.map((it) => (
+            {essentials.map((it, idx) => (
               <ItemRow
                 key={it.slot}
+                index={idx}
                 item={it}
                 editing={editingSlot === it.slot}
                 onEditOpen={() => setEditingSlot(it.slot)}
@@ -186,9 +237,10 @@ export default function BuildKit() {
             <>
               <div className={styles.sectionLabel}>Nice to have</div>
               <div className={styles.itemList}>
-                {niceToHave.map((it) => (
+                {niceToHave.map((it, idx) => (
                   <ItemRow
                     key={it.slot}
+                    index={essentials.length + idx}
                     item={it}
                     editing={editingSlot === it.slot}
                     onEditOpen={() => setEditingSlot(it.slot)}
@@ -254,6 +306,7 @@ export default function BuildKit() {
 }
 
 function ItemRow({
+  index = 0,
   item,
   editing,
   onEditOpen,
@@ -301,7 +354,7 @@ function ItemRow({
     .join(" ");
 
   return (
-    <div className={cls}>
+    <div className={cls} style={{ animationDelay: `${index * 50}ms` }}>
       <ImageWithFallback slot={item.slot} size={56} />
 
       <div className={styles.itemMain}>

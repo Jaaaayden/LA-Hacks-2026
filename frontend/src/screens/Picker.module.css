@@ -70,20 +70,24 @@
   border-radius: var(--radius);
   overflow: hidden;
   transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    transform 80ms ease;
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
+  animation: fadeUp 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .card:hover {
   border-color: var(--ink-muted);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
 }
 
 .cardSelected {
   border-color: var(--ink);
   box-shadow: 0 0 0 2px var(--ink) inset, var(--shadow);
+  transform: translateY(-2px);
 }
 
 .topMatch {
