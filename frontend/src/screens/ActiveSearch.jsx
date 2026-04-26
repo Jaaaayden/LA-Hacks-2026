@@ -23,6 +23,13 @@ function relativeTime(iso) {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
+function effectiveTargetPrice(item) {
+  const sellerPrice = Number(item?.price_usd || 0);
+  const targetPrice = Number(item?.target_price_usd || 0);
+  if (sellerPrice > 0 && targetPrice > 0) return Math.min(sellerPrice, targetPrice);
+  return targetPrice || sellerPrice || 0;
+}
+
 const STATUS_LABEL = {
   queued: "Queued",
   messaging: "Messaging",
@@ -30,7 +37,6 @@ const STATUS_LABEL = {
   gave_up: "Passed",
   error: "Error",
 };
-
 
 export default function ActiveSearch() {
   const { id } = useParams();
@@ -48,9 +54,9 @@ export default function ActiveSearch() {
         const data = await api.getBargainItems(id);
         if (cancelled) return;
         setItems(data || []);
-        // Build activity feed from conversation events.
+
         const feed = [];
-        for (const item of (data || [])) {
+        for (const item of data || []) {
           const conv = item.conversation || [];
           if (conv.length > 0) {
             feed.push({
@@ -92,14 +98,11 @@ export default function ActiveSearch() {
     return items.filter((it) => it.status === filter);
   }, [items, filter]);
 
-  // Derived stats from real data.
-  const negotiatingCount = items.filter(
-    (it) => it.status === "messaging",
-  ).length;
+  const negotiatingCount = items.filter((it) => it.status === "messaging").length;
   const agreedCount = items.filter((it) => it.status === "agreed").length;
   const committedUsd = items
     .filter((it) => it.status === "agreed")
-    .reduce((s, it) => s + (it.target_price_usd || 0), 0);
+    .reduce((s, it) => s + effectiveTargetPrice(it), 0);
 
   const headerRight = (
     <span className={styles.headerStatus}>
@@ -150,7 +153,7 @@ export default function ActiveSearch() {
 
           <div className={styles.itemsHeader}>
             <span className={styles.itemsHeaderLeft}>
-              Items in flight · {items.length}
+              Items in flight - {items.length}
             </span>
             <div className={styles.filters}>
               {["all", "messaging", "agreed"].map((f) => (
@@ -173,17 +176,16 @@ export default function ActiveSearch() {
               </div>
             )}
             {filtered.map((it, idx) => {
-              const saving = Math.max(
-                0,
-                (it.price_usd || 0) - (it.target_price_usd || 0),
-              );
+              const sellerPrice = Number(it.price_usd || 0);
+              const effectiveTarget = effectiveTargetPrice(it);
+              const saving = Math.max(0, sellerPrice - effectiveTarget);
               const statusText =
                 it.status === "messaging" && it.last_message
-                  ? `Sent: "${it.last_message.slice(0, 60)}${it.last_message.length > 60 ? "…" : ""}"`
+                  ? `Sent: "${it.last_message.slice(0, 60)}${it.last_message.length > 60 ? "..." : ""}"`
                   : it.status === "agreed"
                     ? "Deal agreed"
                     : it.status === "gave_up"
-                      ? "Seller firm — passed"
+                      ? "Seller firm - passed"
                       : it.status === "error"
                         ? `Error: ${it.error || "unknown"}`
                         : "Queued to message";
@@ -215,12 +217,14 @@ export default function ActiveSearch() {
                   <div className={styles.priceCol}>
                     <div className={styles.priceRow}>
                       <span className={styles.priceMain}>
-                        ${it.target_price_usd}
+                        ${effectiveTarget.toFixed(0)}
                       </span>
-                      <span className={styles.priceWas}>${it.price_usd}</span>
+                      {sellerPrice > effectiveTarget && (
+                        <span className={styles.priceWas}>${sellerPrice.toFixed(0)}</span>
+                      )}
                     </div>
                     <span className={styles.priceLabel}>
-                      target · saving ${saving.toFixed(0)}
+                      target - saving ${saving.toFixed(0)}
                     </span>
                   </div>
                   <div className={styles.priceCol}>
@@ -260,7 +264,7 @@ export default function ActiveSearch() {
               </div>
             ))}
           </div>
-          <button className={styles.viewLogLink}>View full log →</button>
+          <button className={styles.viewLogLink}>View full log -&gt;</button>
         </aside>
       </div>
     </StepFrame>

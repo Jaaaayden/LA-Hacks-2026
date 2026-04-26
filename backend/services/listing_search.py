@@ -28,7 +28,11 @@ from backend.services.offerup_graphql import resolve_location
 from backend.services.offerup_scraper import search_offerup
 
 DEFAULT_RESULTS_PER_ITEM = 30
+_INTER_ITEM_DELAY_S = 2.5
 DEFAULT_SEARCH_LOCATION = "Los Angeles, CA"
+# Temporary kill-switches for in-progress recommender work.
+ENABLE_RECOMMENDATION_RANKING = False
+ENABLE_LISTING_ATTRIBUTE_ANALYSIS = False
 DEFAULT_RATE_LIMIT_RETRY_DELAY_SECONDS = 90
 MAX_RATE_LIMIT_RETRY_DELAY_SECONDS = 600
 MAX_RATE_LIMIT_RETRIES = 3
@@ -428,32 +432,55 @@ async def _run_search_job(
                     },
                 )
 
-                scraped = await search_offerup(
-                    search_query,
-                    max_price=max_price,
-                    max_results=max_results_per_item,
-                    location=search_location,
-                    include_details=True,
-                )
-                counts = await upsert_scraped_listings(
-                    scraped,
-                    search_query=search_query,
-                    hobby=hobby,
-                    item_type=item_type,
-                    query_id=query_id,
-                    list_id=shopping_list_id,
-                    item_id=item_id,
-                    source="offerup",
-                )
-                for key, value in counts.items():
-                    totals[key] += value
-                analysis_counts = await _extract_and_store_listing_attributes(
-                    scraped,
-                    shopping_item=item,
-                    hobby=hobby,
-                )
-                for key, value in analysis_counts.items():
-                    totals[key] += value
+                # Pace requests across items. Even with retry-on-429 in the
+                # graphql layer, back-to-back per-item detail fetches are
+                # what triggers OfferUp's edge throttle in the first place.
+                if index > 0:
+                    await asyncio.sleep(_INTER_ITEM_DELAY_S)
+
+                # Per-item failure (e.g. 429 after retries exhausted) must
+                # not abort the whole job — the user paid for a full kit
+                # refresh, so we keep going and let the next item try.
+                try:
+                    scraped = await search_offerup(
+                        search_query,
+                        max_price=max_price,
+                        max_results=max_results_per_item,
+                        location=search_location,
+                        include_details=True,
+                    )
+                    counts = await upsert_scraped_listings(
+                        scraped,
+                        search_query=search_query,
+                        hobby=hobby,
+                        item_type=item_type,
+                        query_id=query_id,
+                        list_id=shopping_list_id,
+                        item_id=item_id,
+                        source="offerup",
+                    )
+                    for key, value in counts.items():
+                        totals[key] += value
+                    analysis_counts = await _extract_and_store_listing_attributes(
+                        scraped,
+                        shopping_item=item,
+                        hobby=hobby,
+                    )
+                    for key, value in analysis_counts.items():
+                        totals[key] += value
+                except Exception as exc:
+                    totals["item_errors"] = totals.get("item_errors", 0) + 1
+                    await listing_search_jobs.update_one(
+                        {"shopping_list_id": shopping_list_id},
+                        {
+                            "$push": {
+                                "item_errors": {
+                                    "item_type": item_type,
+                                    "error": f"{type(exc).__name__}: {exc}",
+                                }
+                            }
+                        },
+                    )
 
                 await listing_search_jobs.update_one(
                     {"shopping_list_id": shopping_list_id},
@@ -580,7 +607,7 @@ async def get_candidates(shopping_list_id: str) -> dict[str, list[dict[str, Any]
             )
 
         item = items_by_id.get(str(item_id))
-        if item:
+        if ENABLE_RECOMMENDATION_RANKING and item:
             ranked_docs = await rank_candidates_for_item(item, docs_with_distance)
         else:
             ranked_docs = sorted(
