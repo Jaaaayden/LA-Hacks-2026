@@ -78,6 +78,15 @@ export default function ActiveSearch() {
     };
   }, [id]);
 
+  // Keep the backend negotiator poller running while this screen is open.
+  useEffect(() => {
+    if (!id) return undefined;
+    api.startNegotiationPoller(id).catch((err) => {
+      console.warn("[active-search] start poller failed:", err.message);
+    });
+    return undefined;
+  }, [id]);
+
   const filtered = useMemo(() => {
     if (filter === "all") return items;
     return items.filter((it) => it.status === filter);

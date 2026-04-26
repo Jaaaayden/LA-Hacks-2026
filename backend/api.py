@@ -16,7 +16,13 @@ from backend.services.query_flow import (
     list_query_sessions,
     update_shopping_list,
 )
-from backend.services.bargain import add_to_bargain, get_bargain_items
+from backend.services.bargain import (
+    add_to_bargain,
+    get_bargain_items,
+    get_negotiation_poller_status,
+    start_negotiation_poller,
+    stop_negotiation_poller,
+)
 from backend.services.listing_search import (
     get_candidates,
     get_search_status,
@@ -189,3 +195,21 @@ async def bargain_listings(
 @app.get("/shopping-lists/{shopping_list_id}/bargain-items")
 async def list_bargain_items(shopping_list_id: str) -> list[dict[str, Any]]:
     return await get_bargain_items(shopping_list_id)
+
+
+@app.post("/shopping-lists/{shopping_list_id}/negotiation-poller/start")
+async def start_bargain_poller(shopping_list_id: str) -> dict[str, Any]:
+    try:
+        return await start_negotiation_poller(shopping_list_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@app.post("/shopping-lists/{shopping_list_id}/negotiation-poller/stop")
+async def stop_bargain_poller(shopping_list_id: str) -> dict[str, Any]:
+    return await stop_negotiation_poller(shopping_list_id)
+
+
+@app.get("/shopping-lists/{shopping_list_id}/negotiation-poller")
+async def get_bargain_poller_status(shopping_list_id: str) -> dict[str, Any]:
+    return await get_negotiation_poller_status(shopping_list_id)
