@@ -33,6 +33,9 @@ listing_search_jobs = (
     if _db is not None
     else _MissingCollection("listing_search_jobs")
 )
+bargain_items = (
+    _db["bargain_items"] if _db is not None else _MissingCollection("bargain_items")
+)
 
 
 async def ping() -> dict[str, Any]:

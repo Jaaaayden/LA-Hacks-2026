@@ -54,6 +54,17 @@ export default function Picker() {
     }
   }
 
+  async function bargainAndAdvance() {
+    if (selectedIds.length > 0 && item?.id) {
+      try {
+        await api.addToBargain(id, item.id, selectedIds);
+      } catch (err) {
+        console.warn("[picker] addToBargain failed:", err.message);
+      }
+    }
+    advance();
+  }
+
   function skipCategory() {
     setPicks({ ...picks, [currentSlot]: [] });
     advance();
@@ -197,7 +208,7 @@ export default function Picker() {
             Skip this category
           </button>
           <Button
-            onClick={advance}
+            onClick={bargainAndAdvance}
             disabled={selectedIds.length === 0}
             iconEnd={<ArrowRightIcon />}
           >

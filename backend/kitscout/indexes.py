@@ -1,4 +1,10 @@
-from backend.kitscout.db import listing_search_jobs, listings, queries, shopping_lists
+from backend.kitscout.db import (
+    bargain_items,
+    listing_search_jobs,
+    listings,
+    queries,
+    shopping_lists,
+)
 
 
 async def ensure_indexes() -> None:
@@ -16,3 +22,9 @@ async def ensure_indexes() -> None:
 
     await listing_search_jobs.create_index("shopping_list_id", unique=True)
     await listing_search_jobs.create_index("status")
+
+    await bargain_items.create_index(
+        [("shopping_list_id", 1), ("listing_id", 1)], unique=True
+    )
+    await bargain_items.create_index("shopping_list_id")
+    await bargain_items.create_index("status")

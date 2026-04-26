@@ -117,3 +117,22 @@ class ListingSearchJob(BaseModel):
     finished_at: datetime | None = None
     error: str | None = None
     counts: dict[str, int] = Field(default_factory=dict)
+
+
+class BargainItem(BaseModel):
+    shopping_list_id: str
+    item_id: str            # ShoppingListItem.id (which slot this belongs to)
+    item_type: str          # e.g. "board", "boots"
+    listing_id: str         # OfferUp platform_id (numeric string)
+    title: str
+    price_usd: float
+    target_price_usd: float
+    url: str
+    image_url: str | None = None
+    location_raw: str | None = None
+    status: Literal["queued", "messaging", "agreed", "gave_up", "error"] = "queued"
+    conversation: list[dict[str, str]] = Field(default_factory=list)
+    last_message: str | None = None
+    added_at: datetime
+    updated_at: datetime
+    error: str | None = None
