@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -11,6 +11,7 @@ from backend.services.query_flow import (
     create_query_session,
     get_query_session,
     get_shopping_list,
+    list_query_sessions,
     update_shopping_list,
 )
 from backend.services.bargain import (
@@ -20,7 +21,7 @@ from backend.services.bargain import (
     start_negotiation_poller,
     stop_negotiation_poller,
 )
-from backend.services.search_jobs import (
+from backend.services.listing_search import (
     get_candidates,
     get_search_status,
     start_search,
@@ -75,6 +76,11 @@ async def create_query(request: CreateQueryRequest) -> dict[str, Any]:
         return await create_query_session(request.user_text)
     except ValueError as exc:
         raise _http_error(exc) from exc
+
+
+@app.get("/queries")
+async def list_queries(limit: int = Query(default=12, ge=1, le=50)) -> list[dict[str, Any]]:
+    return await list_query_sessions(limit)
 
 
 @app.get("/queries/{query_id}")
@@ -132,8 +138,6 @@ async def start_shopping_list_search(shopping_list_id: str) -> dict[str, Any]:
     try:
         return await start_search(shopping_list_id)
     except ValueError as exc:
-        if "in progress" in str(exc):
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
         raise _http_error(exc) from exc
 
 

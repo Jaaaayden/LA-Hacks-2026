@@ -385,73 +385,7 @@ export function followupFor(hobby) {
   return FOLLOWUP_BY_HOBBY[canonical] || FOLLOWUP_GENERIC;
 }
 
-// ─── candidates (Picker) and active-search (Step 4) — unchanged ────────────
-
-export const MOCK_CANDIDATES = {
-  snowboard: [
-    {
-      listing_id: "offerup-1",
-      title: "Burton Custom 158",
-      price_usd: 120,
-      list_price_usd: 140,
-      image_url: null,
-      condition: "good",
-      rating: 4.5,
-      location: "Salt Lake City · 4mi · Marcus T.",
-      blurb:
-        "All-mountain shape, beginner-friendly flex. Cosmetic top-sheet scrape, edges sharp.",
-      is_top_match: true,
-    },
-    {
-      listing_id: "offerup-2",
-      title: "Burton Ripcord 154",
-      price_usd: 95,
-      list_price_usd: 130,
-      image_url: null,
-      condition: "good",
-      rating: 4.2,
-      location: "Provo · 22mi · Sandy K.",
-      blurb: "Soft flex made for learning. Great reviews, almost too cheap.",
-      is_top_match: false,
-    },
-    {
-      listing_id: "offerup-3",
-      title: "Rossignol Sawblade 152",
-      price_usd: 140,
-      list_price_usd: 180,
-      image_url: null,
-      condition: "like_new",
-      rating: 4.6,
-      location: "Park City · 18mi · Sara L.",
-      blurb: "Park-leaning, more aggressive than beginner needs.",
-      is_top_match: false,
-    },
-    {
-      listing_id: "offerup-4",
-      title: "K2 Standard 156",
-      price_usd: 80,
-      list_price_usd: 110,
-      image_url: null,
-      condition: "good",
-      rating: 4.0,
-      location: "Murray · 12mi · Aaron P.",
-      blurb: "Cheapest option, base scuffed but rideable.",
-      is_top_match: false,
-    },
-    {
-      listing_id: "offerup-5",
-      title: "GNU Riders Choice 159",
-      price_usd: 160,
-      list_price_usd: 220,
-      image_url: null,
-      condition: "good",
-      rating: 4.4,
-      location: "Provo · 22mi · Priya S.",
-      blurb: "Top reviews, fair tread of board, budget-tight.",
-      is_top_match: false,
-    },
-  ],
-};
+// ─── active-search demo data ────────────────────────────────────────────────
 
 export const MOCK_ACTIVE = {
   committed_usd: 250,

@@ -75,6 +75,7 @@ class Listing(BaseModel):
     hobby: str
     item_type: str
     condition: Literal["new", "like_new", "good", "fair", "poor"] | None = None
+    condition_code: str | None = None
     size: str | None = None
 
     query_id: str | None = None
@@ -85,13 +86,27 @@ class Listing(BaseModel):
     location: Location = Field(default_factory=Location)
     image_url: str | None = None
     image_path: str | None = None
+    photos: list[dict[str, Any]] = Field(default_factory=list)
 
     posted_at: datetime | None = None
+    post_date: str | None = None
     scraped_at: datetime
+    original_price: str | None = None
+    is_removed: bool | None = None
+    is_local: bool | None = None
+    is_firm_on_price: bool | None = None
+    quantity: int | None = None
+    seller: dict[str, Any] | None = None
+    category: dict[str, Any] | None = None
+    fulfillment: dict[str, Any] | None = None
+    distance: dict[str, Any] | None = None
+    extracted_attributes: list[dict[str, Any]] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
+    seller_questions: list[dict[str, Any]] = Field(default_factory=list)
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
-class SearchJob(BaseModel):
+class ListingSearchJob(BaseModel):
     shopping_list_id: str
     status: Literal["pending", "searching", "done", "error"]
     current_item_id: str | None = None

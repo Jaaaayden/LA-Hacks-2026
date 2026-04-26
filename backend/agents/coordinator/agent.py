@@ -682,18 +682,18 @@ _LIVE_SCRAPE_TIMEOUT_S = 150.0  # 30 polls × 5s = 2.5 min hard cap
 
 
 async def _run_live_scrape(ctx: Context, shopping_list_id: str) -> str:
-    """Trigger search_jobs.start_search and poll until it finishes.
+    """Trigger listing_search.start_search and poll until it finishes.
 
-    Lazy-imports `search_jobs` so a missing Playwright install doesn't
+    Lazy-imports `listing_search` so a missing Playwright install doesn't
     break agent startup. Returns a status string suitable for logging.
     """
     try:
-        from backend.services.search_jobs import (
+        from backend.services.listing_search import (
             get_search_status,
             start_search,
         )
     except Exception as exc:  # noqa: BLE001
-        ctx.logger.warning(f"[scrape] search_jobs unavailable: {exc}")
+        ctx.logger.warning(f"[scrape] listing_search unavailable: {exc}")
         return "skipped"
 
     try:

@@ -20,6 +20,7 @@ DEFAULT_USER_AGENT = (
 )
 DEFAULT_EXPERIMENT_ID = "experimentmodel24"
 DEFAULT_LIMIT = 50
+DEFAULT_MIN_PRICE = 2
 
 _ZIP_RE = re.compile(r"^\d{5}(?:-\d{4})?$")
 _LAT_LON_RE = re.compile(
@@ -294,6 +295,7 @@ def _search_params(
     limit: int,
     search_session_id: str,
     page_cursor: str | None,
+    min_price: int | None = None,
 ) -> list[dict[str, str]]:
     params = [
         {"key": "q", "value": query},
@@ -304,6 +306,8 @@ def _search_params(
         {"key": "limit", "value": str(limit)},
         {"key": "searchSessionId", "value": search_session_id},
     ]
+    if min_price is not None:
+        params.append({"key": "price_min", "value": str(min_price)})
     if page_cursor:
         params.append({"key": "page_cursor", "value": page_cursor})
     return params
@@ -526,6 +530,7 @@ def _normalize_listing_detail(
 async def search_offerup_graphql(
     query: str,
     *,
+    min_price: int | None = DEFAULT_MIN_PRICE,
     max_price: int | None = None,
     max_results: int = 30,
     location: str | None = None,
@@ -548,6 +553,7 @@ async def search_offerup_graphql(
                 limit=page_limit,
                 search_session_id=search_session_id,
                 page_cursor=page_cursor,
+                min_price=min_price,
             ),
         }
         data = await _post_graphql(
@@ -566,6 +572,8 @@ async def search_offerup_graphql(
 
             listing = _normalize_listing(raw)
             if listing is None:
+                continue
+            if min_price is not None and listing["price"] < min_price:
                 continue
             if max_price is not None and listing["price"] > max_price:
                 continue

@@ -243,6 +243,11 @@ async def get_query_session(query_id: str) -> dict[str, Any] | None:
     return _serialize_id(doc) if doc else None
 
 
+async def list_query_sessions(limit: int = 12) -> list[dict[str, Any]]:
+    cursor = queries.find().sort("updated_at", -1).limit(limit)
+    return [_serialize_id(doc) async for doc in cursor]
+
+
 async def get_shopping_list(shopping_list_id: str) -> dict[str, Any] | None:
     doc = await shopping_lists.find_one({"_id": _object_id(shopping_list_id)})
     return _serialize_id(doc) if doc else None

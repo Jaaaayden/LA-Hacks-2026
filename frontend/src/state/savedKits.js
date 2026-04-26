@@ -48,7 +48,7 @@ export function saveKit(entry) {
       (!entry.shoppingListId || k.shoppingListId !== entry.shoppingListId),
   );
   const next = [
-    { ...entry, savedAt: Date.now() },
+    { ...entry, savedAt: entry.savedAt || Date.now() },
     ...existing,
   ].slice(0, MAX_ENTRIES);
   writeAll(next);
