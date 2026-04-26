@@ -1,8 +1,6 @@
 from datetime import datetime, timezone
 
 from backend.services.listing_store import (
-    classify_item_type,
-    infer_hobby,
     parse_platform_id,
     parse_location,
     to_listing,
@@ -63,44 +61,6 @@ def test_parse_location_long_state_token_stays_in_city() -> None:
     assert loc.raw == "Selah, Washington"
 
 
-# ── infer_hobby ──────────────────────────────────────────────
-def test_infer_hobby_snowboard() -> None:
-    assert infer_hobby("snowboard") == "snowboarding"
-    assert infer_hobby("snowboard boots size 10") == "snowboarding"
-    assert infer_hobby("ski goggles") == "snowboarding"
-
-
-def test_infer_hobby_skate() -> None:
-    assert infer_hobby("skateboard deck") == "skateboarding"
-
-
-def test_infer_hobby_unknown() -> None:
-    assert infer_hobby("random thing") == "unknown"
-
-
-# ── classify_item_type ───────────────────────────────────────
-def test_classify_item_type_snowboarding() -> None:
-    cls = lambda title, query="": classify_item_type(title, query, "snowboarding")
-    assert cls("Burton Custom Snowboard 158cm") == "board"
-    assert cls("Burton Moto Snowboard Boots, size 10") == "boots"
-    assert cls("Union Force bindings, medium") == "bindings"
-    assert cls("Smith snowboard helmet, size M") == "helmet"
-    assert cls("Oakley ski goggles") == "goggles"
-    assert cls("Burton snowboard jacket") == "jacket"
-
-
-def test_classify_item_type_query_supplements_title() -> None:
-    # If the title is generic but the query is specific, query disambiguates.
-    assert (
-        classify_item_type("Burton 8.5", "snowboard boots size 10", "snowboarding")
-        == "boots"
-    )
-
-
-def test_classify_item_type_unknown_hobby_returns_unknown() -> None:
-    assert classify_item_type("anything", "", "underwater basket weaving") == "unknown"
-
-
 # ── to_listing ───────────────────────────────────────────────
 _NOW = datetime.now(timezone.utc)
 
@@ -124,7 +84,7 @@ def test_to_listing_happy() -> None:
     assert listing.source == "offerup"
     assert listing.price_usd == 180.0
     assert listing.hobby == "snowboarding"
-    assert listing.item_type == "board"
+    assert listing.item_type == "unknown"
     assert listing.location.city == "Los Angeles"
     assert listing.location.state == "CA"
     assert str(listing.image_url) == "https://images.offerup.com/img.jpg"

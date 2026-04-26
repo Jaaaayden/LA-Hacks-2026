@@ -1,15 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import StepFrame from "../layout/StepFrame.jsx";
 import Button from "../primitives/Button.jsx";
 import ImageWithFallback from "../primitives/ImageWithFallback.jsx";
 import { ArrowRightIcon, CheckIcon, StarIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
-import { api } from "../api/client.js";
 import styles from "./Picker.module.css";
-
-const ACTIVE_STATUSES = new Set(["pending", "searching"]);
-const POLL_MS = 3000;
 
 const CONDITION_LABEL = {
   new: "New",
@@ -39,97 +35,7 @@ export default function Picker() {
   const [slotIndex, setSlotIndex] = useState(0);
   const currentSlot = slots[slotIndex];
   const item = kit?.items.find((it) => it.slot === currentSlot);
-
-  const [candidatesByItemId, setCandidatesByItemId] = useState({});
-  const [job, setJob] = useState(null);
-  const [searchError, setSearchError] = useState(null);
-  const startedRef = useRef(false);
-
-  const candidates = (item?.id && candidatesByItemId[item.id]) || [];
-
-  // Mount: load any existing candidates, then resolve the job state. If no
-  // job exists yet, kick one off. The Picker is the single source of truth
-  // for triggering scrapes — if the user reloads the page mid-search, this
-  // re-syncs to the in-flight job rather than starting a duplicate.
-  useEffect(() => {
-    if (!id) return undefined;
-    let cancelled = false;
-
-    async function init() {
-      try {
-        const grouped = await api.getCandidates(id);
-        if (!cancelled) setCandidatesByItemId(grouped || {});
-      } catch (err) {
-        if (!cancelled) console.warn("[picker] getCandidates failed:", err.message);
-      }
-
-      let status = null;
-      try {
-        status = await api.getSearchStatus(id);
-      } catch (err) {
-        if (err.status !== 404) {
-          if (!cancelled) console.warn("[picker] getSearchStatus failed:", err.message);
-        }
-      }
-
-      if (cancelled) return;
-
-      if (status) {
-        setJob(status);
-        return;
-      }
-
-      if (startedRef.current) return;
-      startedRef.current = true;
-      try {
-        const started = await api.startSearch(id);
-        if (!cancelled) setJob(started);
-      } catch (err) {
-        if (cancelled) return;
-        if (err.status === 409) {
-          setSearchError(
-            "Another search is already running. Wait for it to finish, then refresh.",
-          );
-        } else {
-          setSearchError(err.message || "Could not start search.");
-        }
-      }
-    }
-
-    init();
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
-
-  // Poll for progress while the job is active. When it transitions to "done",
-  // do one final candidates fetch so the grid populates.
-  useEffect(() => {
-    if (!id || !job) return undefined;
-    if (!ACTIVE_STATUSES.has(job.status)) {
-      if (job.status === "done") {
-        api.getCandidates(id).then((grouped) =>
-          setCandidatesByItemId(grouped || {}),
-        );
-      }
-      return undefined;
-    }
-
-    const handle = setInterval(async () => {
-      try {
-        const next = await api.getSearchStatus(id);
-        setJob(next);
-        if (next?.status === "done") {
-          const grouped = await api.getCandidates(id);
-          setCandidatesByItemId(grouped || {});
-        }
-      } catch (err) {
-        console.warn("[picker] poll failed:", err.message);
-      }
-    }, POLL_MS);
-
-    return () => clearInterval(handle);
-  }, [id, job?.status]);
+  const candidates = [];
 
   const selectedIds = picks[currentSlot] || [];
 
@@ -154,14 +60,8 @@ export default function Picker() {
   }
 
   if (!item || candidates.length === 0) {
-    const searching = job && ACTIVE_STATUSES.has(job.status);
-    const message = searchError
-      ? searchError
-      : searching
-        ? `Searching for ${job.current_item_type || "items"}… (${job.items_done}/${job.items_total})`
-        : job?.status === "error"
-          ? `Search failed: ${job.error || "unknown error"}`
-          : `No candidates yet for ${item?.label || currentSlot || "this slot"}.`;
+    const message =
+      "Listing search is being rebuilt. You can keep moving through the demo flow for now.";
 
     return (
       <StepFrame step={4} label="Pick" showBack={false}>

@@ -13,7 +13,7 @@ from backend.services.query_flow import (
     get_shopping_list,
     update_shopping_list,
 )
-from backend.services.search_jobs import (
+from backend.services.listing_search import (
     get_candidates,
     get_search_status,
     start_search,
@@ -125,8 +125,6 @@ async def start_shopping_list_search(shopping_list_id: str) -> dict[str, Any]:
     try:
         return await start_search(shopping_list_id)
     except ValueError as exc:
-        if "in progress" in str(exc):
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
         raise _http_error(exc) from exc
 
 

@@ -141,9 +141,7 @@ async def main() -> None:
         )
 
     # Two listings per common kit item so the agent has a choice and Pricer
-    # (Phase 4) has comps to score against. Item_types match the canonical
-    # set in listing_store._SNOWBOARDING_ITEMS so live-scrape data lines up
-    # with the seed schema once Browserbase comes online.
+    # (Phase 4) has comps to score against.
     sample_listings = [
         _listing("2000000001", "K2 Standard Snowboard 152cm beginner", 120, "snowboard", "Pasadena", "beginner all-mountain snowboard"),
         _listing("2000000002", "Burton Custom 156 all-mountain", 180, "snowboard", "Santa Monica", "all-mountain snowboard"),
