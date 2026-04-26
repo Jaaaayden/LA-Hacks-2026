@@ -13,6 +13,11 @@
   animation: spin 720ms linear infinite;
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 .label {
   font-size: inherit;
   color: inherit;
