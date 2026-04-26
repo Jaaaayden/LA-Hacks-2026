@@ -382,6 +382,7 @@ function ItemRow({
 
   const cls = [
     styles.item,
+    editing && styles.itemEditing,
     !item.checked && styles.itemUnchecked,
   ]
     .filter(Boolean)

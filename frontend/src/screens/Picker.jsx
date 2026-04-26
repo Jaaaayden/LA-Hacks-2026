@@ -29,11 +29,16 @@ export default function Picker() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { kit, picks, setPicks } = useKit();
+  const [queueing, setQueueing] = useState(false);
 
   // Active slots = checked items only, in their declared order.
-  const slots = useMemo(
-    () => (kit?.items || []).filter((it) => it.checked).map((it) => it.slot),
+  const activeItems = useMemo(
+    () => (kit?.items || []).filter((it) => it.checked),
     [kit?.items],
+  );
+  const slots = useMemo(
+    () => activeItems.map((it) => it.slot),
+    [activeItems],
   );
 
   const [slotIndex, setSlotIndex] = useState(0);
@@ -49,7 +54,7 @@ export default function Picker() {
 
   // Mount: load any existing candidates, then resolve the job state. If no
   // job exists yet, kick one off. The Picker is the single source of truth
-  // for triggering scrapes — if the user reloads the page mid-search, this
+  // for triggering scrapes; if the user reloads the page mid-search, this
   // re-syncs to the in-flight job rather than starting a duplicate.
   useEffect(() => {
     if (!id) return undefined;
@@ -148,20 +153,58 @@ export default function Picker() {
     }
   }
 
-  async function bargainAndAdvance() {
-    if (selectedIds.length > 0 && item?.id) {
-      try {
-        await api.addToBargain(id, item.id, selectedIds);
-      } catch (err) {
-        console.warn("[picker] addToBargain failed:", err.message);
-      }
+  async function queueAllSelectionsAndGo(nextPicks = picks) {
+    if (!id) {
+      navigate(`/active/${id}`);
+      return;
     }
-    advance();
+
+    const payloads = activeItems
+      .map((it) => ({
+        itemId: it.id,
+        listingIds: nextPicks[it.slot] || [],
+      }))
+      .filter((entry) => entry.itemId && entry.listingIds.length > 0);
+
+    setQueueing(true);
+    try {
+      await Promise.all(
+        payloads.map((entry) =>
+          api.addToBargain(id, entry.itemId, entry.listingIds),
+        ),
+      );
+    } catch (err) {
+      console.warn("[picker] queueAllSelections failed:", err.message);
+    } finally {
+      setQueueing(false);
+    }
+    navigate(`/active/${id}`);
   }
 
-  function skipCategory() {
-    setPicks({ ...picks, [currentSlot]: [] });
-    advance();
+  async function bargainAndAdvance() {
+    if (slotIndex + 1 < slots.length) {
+      advance();
+      return;
+    }
+    await queueAllSelectionsAndGo(picks);
+  }
+
+  async function skipCategory() {
+    const next = { ...picks, [currentSlot]: [] };
+    setPicks(next);
+    if (slotIndex + 1 < slots.length) {
+      advance();
+      return;
+    }
+    await queueAllSelectionsAndGo(next);
+  }
+
+  async function finishFromEmptySlot() {
+    if (slotIndex + 1 < slots.length) {
+      advance();
+      return;
+    }
+    await queueAllSelectionsAndGo(picks);
   }
 
   if (!item || candidates.length === 0) {
@@ -169,7 +212,7 @@ export default function Picker() {
     const message = searchError
       ? searchError
       : searching
-        ? `Searching for ${job.current_item_type || "items"}… (${job.items_done}/${job.items_total})`
+        ? `Searching for ${job.current_item_type || "items"}... (${job.items_done}/${job.items_total})`
         : job?.status === "error"
           ? `Search failed: ${job.error || "unknown error"}`
           : `No candidates yet for ${item?.label || currentSlot || "this slot"}.`;
@@ -188,8 +231,8 @@ export default function Picker() {
           }}
         >
           <p>{message}</p>
-          <Button onClick={advance} iconEnd={<ArrowRightIcon />}>
-            {slotIndex + 1 < slots.length ? "Skip · next slot" : "Start hunting"}
+          <Button onClick={finishFromEmptySlot} disabled={queueing} iconEnd={<ArrowRightIcon />}>
+            {slotIndex + 1 < slots.length ? "Skip - next slot" : "Start hunting"}
           </Button>
         </div>
       </StepFrame>
@@ -202,20 +245,20 @@ export default function Picker() {
   return (
     <StepFrame
       step={4}
-      label={`Pick · ${slotIndex + 1} of ${slots.length}`}
+      label={`Pick - ${slotIndex + 1} of ${slots.length}`}
       showBack={false}
     >
       <div className={styles.layout}>
         <h1 className={styles.headline}>Pick the {itemNounPlural} you like.</h1>
         <p className={styles.subhead}>
-          Choose any you'd consider. I'll go bargain on each one and bring you
+          Choose any you&apos;d consider. I&apos;ll go bargain on each one and bring you
           the best result.
         </p>
 
         <div className={styles.controls}>
           <span>{candidates.length} candidates</span>
           <div className={styles.controlsRight}>
-            <button className={styles.controlBtn}>Best match ▾</button>
+            <button className={styles.controlBtn}>Best match v</button>
             <button className={styles.controlBtn}>Show 5 more</button>
           </div>
         </div>
@@ -299,7 +342,7 @@ export default function Picker() {
             {selectedIds.length} {itemNounPlural} selected
           </span>
           <span className={styles.footerNote}>
-            I'll message {selectedIds.length || "no"} sellers in parallel and
+            I&apos;ll message {selectedIds.length || "no"} sellers in parallel and
             report back with the best result.
           </span>
         </div>
@@ -309,12 +352,14 @@ export default function Picker() {
           </button>
           <Button
             onClick={bargainAndAdvance}
-            disabled={selectedIds.length === 0}
+            disabled={selectedIds.length === 0 || queueing}
             iconEnd={<ArrowRightIcon />}
           >
-            {slotIndex + 1 < slots.length
-              ? "Bargain on these"
-              : "Start hunting"}
+            {queueing
+              ? "Queueing..."
+              : slotIndex + 1 < slots.length
+                ? "Bargain on these"
+                : "Start hunting"}
           </Button>
         </div>
       </div>
