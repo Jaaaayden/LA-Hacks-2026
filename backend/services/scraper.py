@@ -96,7 +96,7 @@ def _require_env(name: str) -> str:
     return val
 
 
-def _fb_id_from_url(url: str) -> str | None:
+def _platform_id_from_url(url: str) -> str | None:
     if not url:
         return None
     m = _FB_ITEM_ID_RE.search(url)
@@ -131,10 +131,10 @@ async def _collect_card_blobs(page, *, max_results: int) -> list[dict]:
             m = _FB_ITEM_ID_RE.search(href)
             if not m:
                 continue
-            fb_id = m.group(1)
-            if fb_id in seen:
+            platform_id = m.group(1)
+            if platform_id in seen:
                 continue
-            seen.add(fb_id)
+            seen.add(platform_id)
 
             text = (await anchor.inner_text()).strip()
             if not text:
@@ -148,8 +148,8 @@ async def _collect_card_blobs(page, *, max_results: int) -> list[dict]:
 
             blobs.append(
                 {
-                    "fb_id": fb_id,
-                    "url": f"https://www.facebook.com/marketplace/item/{fb_id}/",
+                    "platform_id": platform_id,
+                    "url": f"https://www.facebook.com/marketplace/item/{platform_id}/",
                     "text": text,
                     "image_url": img if (img and img.startswith("https://")) else None,
                 }
@@ -183,12 +183,12 @@ async def _structure_via_claude(blobs: list[dict], *, max_results: int) -> list[
                     "items": {
                         "type": "object",
                         "properties": {
-                            "fb_id": {"type": "string"},
+                            "platform_id": {"type": "string"},
                             "title": {"type": "string"},
                             "price": {"type": "number"},
                             "location": {"type": "string"},
                         },
-                        "required": ["fb_id", "title", "price", "location"],
+                        "required": ["platform_id", "title", "price", "location"],
                         "additionalProperties": False,
                     },
                 }
@@ -200,16 +200,16 @@ async def _structure_via_claude(blobs: list[dict], *, max_results: int) -> list[
 
     system = (
         "You are parsing Facebook Marketplace listing card text. Each input card "
-        "has a fb_id and a multi-line text blob. From the text, infer:\n"
+        "has a platform_id and a multi-line text blob. From the text, infer:\n"
         "- title: the listing's product/item title (the most descriptive line)\n"
         "- price: numeric USD price; 0 for 'Free'; strip any '$' and commas\n"
         "- location: the city/area text shown (often the last or second-to-last line)\n"
-        "Return ONE listing per input card, preserving fb_id. If you can't extract "
+        "Return ONE listing per input card, preserving platform_id. If you can't extract "
         "a field cleanly, use empty string for title/location, 0 for price."
     )
 
     user_payload = "\n\n".join(
-        f"=== CARD fb_id={b['fb_id']} ===\n{b['text']}" for b in blobs[: max_results * 2]
+        f"=== CARD platform_id={b['platform_id']} ===\n{b['text']}" for b in blobs[: max_results * 2]
     )
 
     response = await client.messages.create(
@@ -226,9 +226,9 @@ async def _structure_via_claude(blobs: list[dict], *, max_results: int) -> list[
         if block.type == "tool_use" and block.name == _EXTRACT_TOOL_NAME:
             payload = block.input if isinstance(block.input, dict) else dict(block.input)
             for item in payload.get("listings", []):
-                fb_id = item.get("fb_id")
-                if fb_id:
-                    structured[fb_id] = item
+                platform_id = item.get("platform_id")
+                if platform_id:
+                    structured[platform_id] = item
             break
 
     if not structured:
@@ -238,7 +238,7 @@ async def _structure_via_claude(blobs: list[dict], *, max_results: int) -> list[
     # Merge back with the URL + image_url we got from the DOM
     out: list[dict] = []
     for blob in blobs:
-        s = structured.get(blob["fb_id"])
+        s = structured.get(blob["platform_id"])
         if not s:
             continue
         out.append(
@@ -255,9 +255,9 @@ async def _structure_via_claude(blobs: list[dict], *, max_results: int) -> list[
     return out
 
 
-async def _capture_hero_image(page, listing_url: str, fb_id: str, images_dir: Path) -> str | None:
+async def _capture_hero_image(page, listing_url: str, platform_id: str, images_dir: Path) -> str | None:
     """Navigate `page` to a listing detail page and save a viewport screenshot."""
-    img_path = images_dir / f"{fb_id}.png"
+    img_path = images_dir / f"{platform_id}.png"
     if img_path.exists():
         return str(img_path)
 
@@ -270,7 +270,7 @@ async def _capture_hero_image(page, listing_url: str, fb_id: str, images_dir: Pa
         img_path.write_bytes(png_bytes)
         return str(img_path)
     except Exception as e:
-        print(f"[scraper] screenshot failed for {fb_id}: {e}")
+        print(f"[scraper] screenshot failed for {platform_id}: {e}")
         return None
 
 
@@ -340,10 +340,10 @@ async def _run_one_search(
     if capture_images > 0 and listings:
         IMAGES_DIR.mkdir(parents=True, exist_ok=True)
         for listing in listings[:capture_images]:
-            fb_id = _fb_id_from_url(listing.get("url", ""))
-            if not fb_id:
+            platform_id = _platform_id_from_url(listing.get("url", ""))
+            if not platform_id:
                 continue
-            path = await _capture_hero_image(page, listing["url"], fb_id, IMAGES_DIR)
+            path = await _capture_hero_image(page, listing["url"], platform_id, IMAGES_DIR)
             if path:
                 listing["image_path"] = path
             await asyncio.sleep(1)

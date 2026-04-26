@@ -29,7 +29,7 @@ def _run(coro) -> None:
 
 def test_listing_schema_defaults() -> None:
     listing = Listing(
-        fb_id="abc",
+        platform_id="abc",
         url="https://facebook.com/marketplace/item/abc/",
         title="Test board",
         price_usd=100.0,
@@ -102,15 +102,15 @@ def test_listing_round_trip() -> None:
     from backend.kitscout.db import listings
     from backend.kitscout.indexes import ensure_indexes
 
-    fb_id = f"test-{uuid.uuid4()}"
+    platform_id = f"test-{uuid.uuid4()}"
     query_id = f"query-{uuid.uuid4()}"
 
     async def run() -> None:
         await ensure_indexes()
         try:
             doc = Listing(
-                fb_id=fb_id,
-                url=f"https://facebook.com/marketplace/item/{fb_id}/",
+                platform_id=platform_id,
+                url=f"https://facebook.com/marketplace/item/{platform_id}/",
                 title="Round-trip board",
                 price_usd=123.45,
                 hobby="snowboarding",
@@ -123,7 +123,7 @@ def test_listing_round_trip() -> None:
             ).model_dump()
 
             await listings.insert_one(doc)
-            found = await listings.find_one({"fb_id": fb_id})
+            found = await listings.find_one({"platform_id": platform_id})
 
             assert found is not None
             assert found["title"] == "Round-trip board"
@@ -132,23 +132,23 @@ def test_listing_round_trip() -> None:
             assert found["currency"] == "USD"
             assert found["query_id"] == query_id
         finally:
-            await listings.delete_many({"fb_id": fb_id})
+            await listings.delete_many({"platform_id": platform_id})
 
     _run(run())
 
 
 @pytestmark_mongo
 @pytest.mark.mongo
-def test_unique_fb_id_index_rejects_duplicate() -> None:
+def test_unique_platform_id_index_rejects_duplicate() -> None:
     from backend.kitscout.db import listings
     from backend.kitscout.indexes import ensure_indexes
 
-    fb_id = f"test-{uuid.uuid4()}"
+    platform_id = f"test-{uuid.uuid4()}"
 
     def make_doc() -> dict:
         return Listing(
-            fb_id=fb_id,
-            url=f"https://facebook.com/marketplace/item/{fb_id}/",
+            platform_id=platform_id,
+            url=f"https://facebook.com/marketplace/item/{platform_id}/",
             title="Dup test",
             price_usd=10.0,
             hobby="snowboarding",
@@ -163,7 +163,7 @@ def test_unique_fb_id_index_rejects_duplicate() -> None:
             with pytest.raises(DuplicateKeyError):
                 await listings.insert_one(make_doc())
         finally:
-            await listings.delete_many({"fb_id": fb_id})
+            await listings.delete_many({"platform_id": platform_id})
 
     _run(run())
 

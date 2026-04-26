@@ -111,7 +111,7 @@ async def main() -> None:
 
     sample_listings = [
         Listing(
-            fb_id="2000000001",
+            platform_id="2000000001",
             url="https://facebook.com/marketplace/item/2000000001/",
             title="K2 Standard Snowboard 152cm beginner",
             price_usd=120,
@@ -125,7 +125,7 @@ async def main() -> None:
             scraped_at=_NOW,
         ),
         Listing(
-            fb_id="2000000002",
+            platform_id="2000000002",
             url="https://facebook.com/marketplace/item/2000000002/",
             title="Burton Moto Snowboard Boots size 10",
             price_usd=45,

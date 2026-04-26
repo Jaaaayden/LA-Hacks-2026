@@ -14,17 +14,48 @@ Usage:
 import argparse
 import asyncio
 import json
+import random
 import re
 from pathlib import Path
 
 from dotenv import load_dotenv
 from playwright.async_api import Page, async_playwright
 
-from backend.services._browser import launch_logged_in_chrome
+from backend.services._browser import attach_to_user_chrome, launch_logged_in_chrome
 
 load_dotenv()
 
 DEBUG_DIR = Path("scraper/output/debug")
+
+
+async def _warm_up_session(page: Page) -> None:
+    """Browse FB normally for ~15s before going to the listing.
+
+    FB's risk model treats sessions that land cold on a listing and
+    immediately try to message as bot-like. Warming up with home-feed +
+    marketplace browse + scroll mirrors what a real user does.
+    """
+    print("[messenger] warming up session...")
+    try:
+        await page.goto("https://www.facebook.com/", wait_until="commit", timeout=30000)
+        await asyncio.sleep(random.uniform(3, 5))
+        for _ in range(2):
+            await page.mouse.wheel(0, random.randint(400, 1200))
+            await asyncio.sleep(random.uniform(1, 2))
+    except Exception as e:
+        print(f"[messenger] warmup home failed: {e}")
+
+    try:
+        await page.goto(
+            "https://www.facebook.com/marketplace/", wait_until="commit", timeout=30000
+        )
+        await asyncio.sleep(random.uniform(3, 5))
+        for _ in range(2):
+            await page.mouse.wheel(0, random.randint(400, 1000))
+            await asyncio.sleep(random.uniform(1, 2))
+    except Exception as e:
+        print(f"[messenger] warmup marketplace failed: {e}")
+    print("[messenger] warmup done")
 
 
 async def _hit_location_gate(page: Page) -> bool:
@@ -267,19 +298,43 @@ async def _try_send(page: Page, composer) -> bool:
     return False
 
 
-async def message_seller(listing_url: str, message_text: str) -> dict:
+async def message_seller(
+    listing_url: str,
+    message_text: str,
+    *,
+    cdp: bool = False,
+    cdp_url: str = "http://localhost:9222",
+    warmup: bool = True,
+) -> dict:
     """Open the listing in a local logged-in browser and send a message.
+
+    Args:
+        cdp: if True, attach to a Chrome already started with
+            --remote-debugging-port=9222 instead of launching one. Use this
+            when FB still gates the Playwright-launched browser despite the
+            stealth patches in _browser.py.
+        warmup: if True, browse facebook.com + /marketplace/ briefly before
+            going to the listing — softens FB's bot-detection heuristics.
 
     Returns {"success": bool, "error": str | None}.
     """
     async with async_playwright() as p:
+        close_context = True
         try:
-            context = await launch_logged_in_chrome(p)
+            if cdp:
+                context = await attach_to_user_chrome(p, cdp_url)
+                # Don't tear down the user's real browser when we're done.
+                close_context = False
+            else:
+                context = await launch_logged_in_chrome(p)
         except Exception as e:
             return {"success": False, "error": f"Browser launch failed: {e}"}
 
         try:
             page = context.pages[0] if context.pages else await context.new_page()
+
+            if warmup:
+                await _warm_up_session(page)
 
             await page.goto(listing_url, wait_until="commit", timeout=60000)
             await asyncio.sleep(7)
@@ -287,17 +342,13 @@ async def message_seller(listing_url: str, message_text: str) -> dict:
 
             await _open_composer(page)
 
-            # FB's "Verify your location" gate is account-level — no client-side
-            # bypass works reliably. Detect it and surface clearly so callers
-            # don't silently report success when the message wasn't sent.
             if await _hit_location_gate(page):
                 await _snap(page, "00_location_gate")
                 return {
                     "success": False,
                     "error": (
-                        "FB_LOCATION_GATE: Marketplace requires account-level location "
-                        "verification. Open the FB mobile app, message any seller from "
-                        "there to seed the verification, then re-run."
+                        "FB_LOCATION_GATE: desktop session still gated. Try --cdp "
+                        "with a manually-started Chrome (see plan)."
                     ),
                 }
 
@@ -308,17 +359,40 @@ async def message_seller(listing_url: str, message_text: str) -> dict:
         except Exception as e:
             return {"success": False, "error": f"{type(e).__name__}: {e}"}
         finally:
-            await context.close()
+            if close_context:
+                await context.close()
 
 
 async def _main() -> None:
     parser = argparse.ArgumentParser(description="Message a FB Marketplace seller.")
     parser.add_argument("listing_url", help="Facebook Marketplace item URL")
     parser.add_argument("message", help="Message body to send")
+    parser.add_argument(
+        "--cdp",
+        action="store_true",
+        help="Attach to a Chrome started with --remote-debugging-port=9222 "
+        "instead of launching one (Layer 3 bypass)",
+    )
+    parser.add_argument(
+        "--cdp-url",
+        default="http://localhost:9222",
+        help="CDP endpoint for --cdp mode (default: http://localhost:9222)",
+    )
+    parser.add_argument(
+        "--no-warmup",
+        action="store_true",
+        help="Skip the warm-up browse before the listing nav (faster, more bot-like)",
+    )
     args = parser.parse_args()
 
     print(f"[messenger] {args.listing_url}")
-    result = await message_seller(args.listing_url, args.message)
+    result = await message_seller(
+        args.listing_url,
+        args.message,
+        cdp=args.cdp,
+        cdp_url=args.cdp_url,
+        warmup=not args.no_warmup,
+    )
     print(json.dumps(result, indent=2))
 
 

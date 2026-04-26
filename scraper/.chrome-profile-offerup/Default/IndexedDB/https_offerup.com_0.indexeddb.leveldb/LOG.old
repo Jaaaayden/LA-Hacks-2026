@@ -1,0 +1,25 @@
+2026/04/25-22:22:10.434 2b28 Reusing MANIFEST C:\Users\jayde\Documents\GitHub\LA-Hacks-2026\scraper\.chrome-profile-offerup\Default\IndexedDB\https_offerup.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/25-22:22:10.434 2b28 Recovering log #43
+2026/04/25-22:22:10.434 2b28 Reusing old log C:\Users\jayde\Documents\GitHub\LA-Hacks-2026\scraper\.chrome-profile-offerup\Default\IndexedDB\https_offerup.com_0.indexeddb.leveldb/000043.log 
+2026/04/25-22:22:10.435 2b28 Delete type=2 #42
+2026/04/25-22:22:10.617 7744 Level-0 table #48: started
+2026/04/25-22:22:10.619 7744 Level-0 table #48: 2667 bytes OK
+2026/04/25-22:22:10.620 7744 Delete type=0 #43
+2026/04/25-22:22:10.620 743c Manual compaction at level-0 from '\x00\x14\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x15\x00\x00\x00' @ 0 : 0; will stop at '\x00\x14\x00\x00\x05' @ 1182 : 1
+2026/04/25-22:22:10.620 743c Compacting 1@0 + 1@1 files
+2026/04/25-22:22:10.622 743c Generated table #49@0: 414 keys, 5458 bytes
+2026/04/25-22:22:10.622 743c Compacted 1@0 + 1@1 files => 5458 bytes
+2026/04/25-22:22:10.622 743c compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/04/25-22:22:10.622 743c Delete type=2 #48
+2026/04/25-22:22:10.622 743c Manual compaction at level-0 from '\x00\x14\x00\x00\x05' @ 1182 : 1 .. '\x00\x15\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/04/25-22:22:16.331 7744 Level-0 table #51: started
+2026/04/25-22:22:16.333 7744 Level-0 table #51: 2683 bytes OK
+2026/04/25-22:22:16.334 7744 Delete type=2 #45
+2026/04/25-22:22:16.334 7744 Delete type=0 #47
+2026/04/25-22:22:16.334 2b28 Manual compaction at level-0 from '\x00\x15\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x16\x00\x00\x00' @ 0 : 0; will stop at '\x00\x15\x00\x00\x05' @ 1237 : 1
+2026/04/25-22:22:16.334 2b28 Compacting 1@0 + 1@1 files
+2026/04/25-22:22:16.336 2b28 Generated table #52@0: 414 keys, 5454 bytes
+2026/04/25-22:22:16.336 2b28 Compacted 1@0 + 1@1 files => 5454 bytes
+2026/04/25-22:22:16.337 2b28 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/04/25-22:22:16.337 2b28 Delete type=2 #51
+2026/04/25-22:22:16.337 2b28 Manual compaction at level-0 from '\x00\x15\x00\x00\x05' @ 1237 : 1 .. '\x00\x16\x00\x00\x00' @ 0 : 0; will stop at (end)

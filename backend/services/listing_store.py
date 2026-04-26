@@ -5,6 +5,7 @@ from backend.kitscout.db import listings
 from backend.kitscout.schemas import Listing, Location
 
 _FB_ID_RE = re.compile(r"/marketplace/item/(\d+)")
+_OFFERUP_ID_RE = re.compile(r"/item/detail/(\d+)")
 
 _HOBBY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "snowboarding": ("snowboard", "ski goggles", "snowboarding"),
@@ -24,11 +25,39 @@ _SNOWBOARDING_ITEMS: tuple[tuple[str, str], ...] = (
 )
 
 
-def parse_fb_id(url: str) -> str | None:
+def parse_platform_id(url: str) -> str | None:
+    """Extract a platform-specific ID from a listing URL.
+
+    Supports Facebook Marketplace and OfferUp URLs.
+    """
     if not url:
         return None
-    match = _FB_ID_RE.search(url)
-    return match.group(1) if match else None
+    m = _FB_ID_RE.search(url)
+    if m:
+        return m.group(1)
+    m = _OFFERUP_ID_RE.search(url)
+    if m:
+        return m.group(1)
+    return None
+
+
+# Backwards-compatible alias — existing code and tests import this name.
+parse_fb_id = parse_platform_id
+
+
+def parse_offerup_id(url: str) -> str | None:
+    """Extract the numeric item ID from an OfferUp URL."""
+    if not url:
+        return None
+    m = _OFFERUP_ID_RE.search(url)
+    return m.group(1) if m else None
+
+
+def _detect_source(url: str) -> str:
+    """Infer the listing source from its URL."""
+    if "offerup.com" in url:
+        return "offerup"
+    return "facebook_marketplace"
 
 
 def parse_location(raw: str | None) -> Location:
@@ -67,11 +96,14 @@ def to_listing(
     query_id: str | None = None,
     shopping_list_id: str | None = None,
     scraped_at: datetime | None = None,
+    source: str | None = None,
 ) -> Listing | None:
     url = scraped.get("url") or ""
-    fb_id = parse_fb_id(url)
-    if not fb_id:
+    platform_id = parse_platform_id(url)
+    if not platform_id:
         return None
+
+    resolved_source = source or _detect_source(url)
 
     image_url = scraped.get("imageUrl") or scraped.get("image_url")
     if image_url and not str(image_url).startswith("http"):
@@ -87,7 +119,8 @@ def to_listing(
 
     try:
         return Listing(
-            fb_id=fb_id,
+            platform_id=platform_id,
+            source=resolved_source,
             url=url,
             title=scraped.get("title") or "",
             price_usd=float(scraped.get("price") or 0),
@@ -116,6 +149,7 @@ async def upsert_scraped_listings(
     query_id: str | None = None,
     shopping_list_id: str | None = None,
     scraped_at: datetime | None = None,
+    source: str | None = None,
 ) -> dict[str, int]:
     counts = {"inserted": 0, "matched": 0, "skipped": 0}
     for raw in scraped:
@@ -127,13 +161,14 @@ async def upsert_scraped_listings(
             query_id=query_id,
             shopping_list_id=shopping_list_id,
             scraped_at=scraped_at,
+            source=source,
         )
         if listing is None:
             counts["skipped"] += 1
             continue
 
         result = await listings.update_one(
-            {"fb_id": listing.fb_id},
+            {"platform_id": listing.platform_id, "source": listing.source},
             {"$set": listing.model_dump()},
             upsert=True,
         )

@@ -3,31 +3,45 @@ from datetime import datetime, timezone
 from backend.services.listing_store import (
     classify_item_type,
     infer_hobby,
-    parse_fb_id,
+    parse_platform_id,
     parse_location,
     to_listing,
 )
 from backend.kitscout.schemas import Listing, Location
 
 
-# ── parse_fb_id ──────────────────────────────────────────────
-def test_parse_fb_id_happy() -> None:
+# ── parse_platform_id ────────────────────────────────────────
+def test_parse_platform_id_fb_happy() -> None:
     assert (
-        parse_fb_id("https://www.facebook.com/marketplace/item/2226543014757869")
+        parse_platform_id("https://www.facebook.com/marketplace/item/2226543014757869")
         == "2226543014757869"
     )
 
 
-def test_parse_fb_id_with_trailing_slash_and_query() -> None:
+def test_parse_platform_id_fb_with_trailing_slash_and_query() -> None:
     assert (
-        parse_fb_id("https://www.facebook.com/marketplace/item/123/?ref=foo")
+        parse_platform_id("https://www.facebook.com/marketplace/item/123/?ref=foo")
         == "123"
     )
 
 
-def test_parse_fb_id_no_match() -> None:
-    assert parse_fb_id("https://example.com/listing/123") is None
-    assert parse_fb_id("") is None
+def test_parse_platform_id_offerup_happy() -> None:
+    assert (
+        parse_platform_id("https://offerup.com/item/detail/987654321")
+        == "987654321"
+    )
+
+
+def test_parse_platform_id_offerup_with_trailing_slash() -> None:
+    assert (
+        parse_platform_id("https://offerup.com/item/detail/55555/")
+        == "55555"
+    )
+
+
+def test_parse_platform_id_no_match() -> None:
+    assert parse_platform_id("https://example.com/listing/123") is None
+    assert parse_platform_id("") is None
 
 
 # ── parse_location ───────────────────────────────────────────
@@ -121,7 +135,8 @@ def test_to_listing_happy() -> None:
         scraped_at=_NOW,
     )
     assert isinstance(listing, Listing)
-    assert listing.fb_id == "2226543014757869"
+    assert listing.platform_id == "2226543014757869"
+    assert listing.source == "facebook_marketplace"
     assert listing.price_usd == 180.0
     assert listing.hobby == "snowboarding"
     assert listing.item_type == "board"
@@ -129,6 +144,26 @@ def test_to_listing_happy() -> None:
     assert listing.location.state == "CA"
     assert str(listing.image_url) == "https://scontent.fbcdn.net/img.jpg"
     assert listing.raw == raw  # original payload preserved
+
+
+def test_to_listing_offerup() -> None:
+    raw = {
+        "title": "K2 Standard Snowboard 152cm",
+        "price": 100,
+        "location": "Pasadena, CA",
+        "url": "https://offerup.com/item/detail/987654321",
+        "image_url": "https://images.offerup.com/img.jpg",
+    }
+    listing = to_listing(
+        raw,
+        hobby="snowboarding",
+        search_query="snowboard",
+        scraped_at=_NOW,
+    )
+    assert isinstance(listing, Listing)
+    assert listing.platform_id == "987654321"
+    assert listing.source == "offerup"
+    assert listing.price_usd == 100.0
 
 
 def test_to_listing_drops_garbage_image_url() -> None:
@@ -156,7 +191,7 @@ def test_to_listing_returns_none_on_missing_url() -> None:
     assert to_listing(raw, hobby="snowboarding", search_query="", scraped_at=_NOW) is None
 
 
-def test_to_listing_returns_none_on_unparseable_fb_id() -> None:
+def test_to_listing_returns_none_on_unparseable_platform_id() -> None:
     raw = {
         "title": "x",
         "price": 1,
