@@ -37,3 +37,5 @@ CLAUDE.md
 
 # Scraper output
 scraper/output/images/
+scraper/output/debug/
+scraper/.chrome-profile/

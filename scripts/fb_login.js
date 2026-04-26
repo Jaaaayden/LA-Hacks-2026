@@ -1,56 +1,37 @@
+/**
+ * fb_login.js — Open system Chrome to facebook.com/login.
+ *
+ * Uses Playwright's `launch_persistent_context` with `channel: "chrome"`
+ * to match the exact browser that Stagehand's chrome-launcher uses.
+ * Cookies persist to scraper/.chrome-profile and are reused by both
+ * the JS scraper (Stagehand LOCAL) and the Python messenger.
+ */
 import "dotenv/config";
-import { Browserbase } from "@browserbasehq/sdk";
-import { Stagehand } from "@browserbasehq/stagehand";
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
-import { requireEnv } from "../scraper/session.js";
+import { chromium } from "playwright";
+import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
 
-const ENV_PATH = ".env";
+const PROFILE_DIR = resolve("scraper/.chrome-profile");
 const LOGIN_TIMEOUT_MS = 6 * 60_000;
 
 async function main() {
-  const apiKey = requireEnv("BROWSERBASE_API_KEY");
-  const projectId = requireEnv("BROWSERBASE_PROJECT_ID");
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is required. Set it in .env.");
-  }
-
-  const bb = new Browserbase({ apiKey });
-
-  let contextId = process.env.FB_CONTEXT_ID;
-  if (!contextId) {
-    console.log("Creating new Browserbase Context...");
-    const ctx = await bb.contexts.create({ projectId });
-    contextId = ctx.id;
-    persistEnv("FB_CONTEXT_ID", contextId);
-    console.log(`Saved FB_CONTEXT_ID=${contextId} to .env`);
-  } else {
-    console.log(`Reusing FB_CONTEXT_ID=${contextId}`);
-  }
-
-  const stagehand = new Stagehand({
-    env: "BROWSERBASE",
-    apiKey,
-    projectId,
-    model: { modelName: "anthropic/claude-sonnet-4-5", apiKey: process.env.ANTHROPIC_API_KEY },
-    keepAlive: true,
-    browserbaseSessionCreateParams: {
-      projectId,
-      keepAlive: true,
-      browserSettings: { context: { id: contextId, persist: true } },
-    },
-  });
-
-  await stagehand.init();
-  const sessionId = stagehand.sessionId;
+  mkdirSync(PROFILE_DIR, { recursive: true });
 
   console.log(`\n=========== LOGIN INSTRUCTIONS ===========`);
-  console.log(`Open the live view in your browser:`);
-  console.log(`  https://www.browserbase.com/sessions/${sessionId ?? "(open Browserbase dashboard, latest session)"}`);
-  console.log(`Then sign in to Facebook with your BURNER account.`);
-  console.log(`The script polls for ~6 min, then saves cookies into the Context.`);
+  console.log(`A Chrome window will open to facebook.com/login.`);
+  console.log(`Sign in with your BURNER account.`);
+  console.log(`The script polls for ~6 min, then closes.`);
+  console.log(`Cookies are saved to scraper/.chrome-profile.`);
   console.log(`==========================================\n`);
 
-  const page = stagehand.context.pages()[0] ?? (await stagehand.context.newPage());
+  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
+    channel: "chrome",      // use system Chrome (same as chrome-launcher)
+    headless: false,
+    viewport: { width: 1280, height: 900 },
+    locale: "en-US",
+  });
+
+  const page = context.pages()[0] ?? (await context.newPage());
   await page.goto("https://www.facebook.com/login");
 
   const deadline = Date.now() + LOGIN_TIMEOUT_MS;
@@ -71,8 +52,9 @@ async function main() {
   }
 
   if (!loggedIn) {
-    console.warn("Timed out waiting for login. Closing session anyway.");
+    console.warn("Timed out waiting for login. Closing browser anyway.");
   } else {
+    // Navigate to Marketplace to prime those cookies too
     await page.goto("https://www.facebook.com/marketplace/");
     await page.waitForTimeout(4_000);
     const finalUrl = page.url();
@@ -82,19 +64,9 @@ async function main() {
     }
   }
 
-  await stagehand.close();
-  console.log("\nSession closed. Context cookies saved.");
+  await context.close();
+  console.log("\nBrowser closed. Cookies saved to scraper/.chrome-profile.");
   console.log("Next step: npm run fb:scrape");
-}
-
-function persistEnv(key, value) {
-  let body = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, "utf8") : "";
-  if (new RegExp(`^${key}=`, "m").test(body)) {
-    body = body.replace(new RegExp(`^${key}=.*$`, "m"), `${key}=${value}`);
-  } else {
-    body += `\n${key}=${value}\n`;
-  }
-  writeFileSync(ENV_PATH, body);
 }
 
 main().catch((e) => {
