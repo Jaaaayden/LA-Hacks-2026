@@ -286,6 +286,7 @@ export default function BuildKit() {
     setHuntError(null);
 
     try {
+      await api.updateShoppingList(listId, toShoppingListUpdate(kit));
       await api.startSearch(listId);
       saveKit({
         id: listId,

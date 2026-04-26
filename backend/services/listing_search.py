@@ -20,7 +20,9 @@ from backend.kitscout.db import (
     shopping_lists,
 )
 from backend.kitscout.schemas import ListingSearchJob
-from backend.services.listing_store import upsert_scraped_listings
+from backend.services.listing_attribute_extractor import extract_listing_attributes
+from backend.services.listing_ranker import rank_candidates_for_item
+from backend.services.listing_store import parse_platform_id, upsert_scraped_listings
 from backend.services.offerup_graphql import resolve_location
 from backend.services.offerup_scraper import search_offerup
 
@@ -39,6 +41,19 @@ def _object_id(value: str) -> ObjectId:
         return ObjectId(value)
     except Exception as exc:
         raise ValueError(f"Invalid Mongo ObjectId: {value}") from exc
+
+
+def _item_included_in_search(item: dict[str, Any]) -> bool:
+    """True if this line item should be scraped (same semantics as the picker)."""
+    if "checked" in item and item["checked"] is not None:
+        return bool(item["checked"])
+    if "required" in item and item["required"] is not None:
+        return bool(item["required"])
+    return True
+
+
+def _items_to_search(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [it for it in items if _item_included_in_search(it)]
 
 
 def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
@@ -157,7 +172,7 @@ async def _resolve_search_center(
 def _candidate_shape(
     doc: dict[str, Any],
     *,
-    is_top_match: bool = False,
+    is_top_match: bool | None = None,
     computed_distance_miles: float | None = None,
 ) -> dict[str, Any]:
     location = doc.get("location") or {}
@@ -203,10 +218,57 @@ def _candidate_shape(
         "category": doc.get("category"),
         "fulfillment": doc.get("fulfillment"),
         "is_firm_on_price": doc.get("is_firm_on_price"),
+        "relevance": doc.get("relevance") or "uncertain",
+        "extracted_attributes": doc.get("extracted_attributes") or [],
         "missing_fields": doc.get("missing_fields") or [],
+        "attribute_notes": doc.get("attribute_notes"),
         "seller_questions": doc.get("seller_questions") or [],
-        "is_top_match": is_top_match,
+        "is_top_match": bool(doc.get("is_top_match")) if is_top_match is None else is_top_match,
     }
+
+
+async def _extract_and_store_listing_attributes(
+    scraped: list[dict[str, Any]],
+    *,
+    shopping_item: dict[str, Any],
+    hobby: str,
+) -> dict[str, int]:
+    if not scraped:
+        return {"analyzed": 0, "analysis_errors": 0}
+
+    try:
+        analyses = await asyncio.to_thread(
+            extract_listing_attributes,
+            scraped,
+            shopping_item=shopping_item,
+            hobby=hobby,
+        )
+    except Exception:
+        return {"analyzed": 0, "analysis_errors": len(scraped)}
+
+    analyzed = 0
+    for raw in scraped:
+        platform_id = parse_platform_id(str(raw.get("url") or ""))
+        if not platform_id:
+            continue
+        analysis = analyses.get(platform_id)
+        if not analysis:
+            continue
+        await listings.update_one(
+            {"platform_id": platform_id, "source": "offerup"},
+            {
+                "$set": {
+                    "relevance": analysis["relevance"],
+                    "extracted_attributes": analysis["extracted_attributes"],
+                    "missing_fields": analysis["missing_fields"],
+                    "seller_questions": analysis["seller_questions"],
+                    "attribute_notes": analysis["attribute_notes"],
+                }
+            },
+        )
+        analyzed += 1
+
+    return {"analyzed": analyzed, "analysis_errors": 0}
 
 
 async def start_search(
@@ -223,12 +285,13 @@ async def start_search(
     if shopping_list is None:
         raise ValueError(f"Shopping list not found: {shopping_list_id}")
 
-    items = shopping_list.get("items") or []
+    all_items = shopping_list.get("items") or []
+    search_items = _items_to_search(all_items)
     now = _now()
     job = ListingSearchJob(
         shopping_list_id=shopping_list_id,
         status="pending",
-        items_total=len(items),
+        items_total=len(search_items),
         started_at=now,
     )
     payload = job.model_dump()
@@ -274,7 +337,8 @@ async def _run_search_job(
             search_location, _, _ = await _resolve_search_center(requested_location)
 
             hobby = shopping_list.get("hobby") or "unknown"
-            items = shopping_list.get("items") or []
+            raw_items = shopping_list.get("items") or []
+            items = _items_to_search(raw_items)
 
             await listing_search_jobs.update_one(
                 {"shopping_list_id": shopping_list_id},
@@ -320,6 +384,13 @@ async def _run_search_job(
                     source="offerup",
                 )
                 for key, value in counts.items():
+                    totals[key] += value
+                analysis_counts = await _extract_and_store_listing_attributes(
+                    scraped,
+                    shopping_item=item,
+                    hobby=hobby,
+                )
+                for key, value in analysis_counts.items():
                     totals[key] += value
 
                 await listing_search_jobs.update_one(
@@ -378,6 +449,11 @@ async def get_candidates(shopping_list_id: str) -> dict[str, list[dict[str, Any]
         query_doc.get("parsed_intent") if query_doc else None
     )
     _, center_lat, center_lng = await _resolve_search_center(intent_location)
+    items_by_id = {
+        str(item.get("id")): item
+        for item in shopping_list.get("items") or []
+        if item.get("id")
+    }
 
     grouped_docs: dict[str, list[dict[str, Any]]] = defaultdict(list)
     cursor = listings.find({"list_id": shopping_list_id})
@@ -389,25 +465,38 @@ async def get_candidates(shopping_list_id: str) -> dict[str, list[dict[str, Any]
 
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item_id, item_docs in grouped_docs.items():
-        ranked_docs = sorted(
-            item_docs,
-            key=lambda doc: _candidate_sort_key(
+        docs_with_distance = []
+        for doc in item_docs:
+            computed_distance_miles = _distance_miles_for_doc(
                 doc,
                 center_lat=center_lat,
                 center_lng=center_lng,
-            ),
-        )
+            )
+            docs_with_distance.append(
+                {**doc, "_computed_distance_miles": computed_distance_miles}
+            )
+
+        item = items_by_id.get(str(item_id))
+        if item:
+            ranked_docs = await rank_candidates_for_item(item, docs_with_distance)
+        else:
+            ranked_docs = sorted(
+                docs_with_distance,
+                key=lambda doc: _candidate_sort_key(
+                    doc,
+                    center_lat=center_lat,
+                    center_lng=center_lng,
+                ),
+            )
+            if ranked_docs:
+                ranked_docs[0]["is_top_match"] = True
+
         shaped: list[dict[str, Any]] = []
-        for idx, doc in enumerate(ranked_docs):
+        for doc in ranked_docs:
             shaped.append(
                 _candidate_shape(
                     doc,
-                    is_top_match=(idx == 0),
-                    computed_distance_miles=_distance_miles_for_doc(
-                        doc,
-                        center_lat=center_lat,
-                        center_lng=center_lng,
-                    ),
+                    computed_distance_miles=doc.get("_computed_distance_miles"),
                 )
             )
         grouped[item_id] = shaped
