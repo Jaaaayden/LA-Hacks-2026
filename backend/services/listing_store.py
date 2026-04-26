@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from backend.kitscout.db import listings
 from backend.kitscout.schemas import Listing, Location
 
-_OFFERUP_ID_RE = re.compile(r"/item/detail/(\d+)")
+_OFFERUP_ID_RE = re.compile(r"/item/detail/([^/?#]+)")
 
 _HOBBY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "snowboarding": ("snowboard", "ski goggles", "snowboarding"),

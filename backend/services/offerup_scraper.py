@@ -1,10 +1,10 @@
-"""OfferUp scraper — local Chrome via Playwright + Claude DOM-text extraction.
+"""OfferUp scraper CLI.
 
-Drives a persistent Chrome profile populated by `python scripts/offerup_login.py`.
+Search now uses OfferUp's GraphQL feed endpoint. The older Playwright helpers are
+kept in this module as a fallback/reference, but `search_offerup()` and the CLI
+use direct HTTP requests.
 
-OfferUp search URLs use `offerup.com/search?q=<query>`. Price filtering is
-done via the on-page filter UI (no URL param), so we interact with the filter
-controls programmatically.
+OfferUp search uses `GetModularFeed`; ZIP geocoding uses `GeocodeLocation`.
 
 Two modes:
 - single query  — `python -m backend.services.offerup_scraper "snowboard"`
@@ -486,23 +486,27 @@ async def search_offerup(
     capture_images: int = DEFAULT_IMAGE_CAPTURE_LIMIT,
     location: str | None = None,
 ) -> list[dict]:
-    """Single-query search. Each listing has title, price, location, url,
-    image_url, and (when `capture_images > 0`) image_path."""
-    async with async_playwright() as p:
-        context = await launch_logged_in_chrome(p)
-        try:
-            page = context.pages[0] if context.pages else await context.new_page()
-            return await _run_one_search(
-                page,
-                query,
-                max_price=max_price,
-                max_results=max_results,
-                scrolls=scrolls,
-                capture_images=capture_images,
-                location=location,
-            )
-        finally:
-            await context.close()
+    """Single-query search via OfferUp GraphQL.
+
+    `scrolls` and `capture_images` are accepted for CLI compatibility with the
+    former browser scraper; GraphQL pagination replaces scrolling, and image
+    URLs come directly from the feed response.
+    """
+    from backend.services.offerup_graphql import search_offerup_graphql
+
+    return await search_offerup_graphql(
+        query,
+        max_price=max_price,
+        max_results=max_results,
+        location=location,
+    )
+
+
+async def get_offerup_listing_detail(item: str | dict) -> dict:
+    """Fetch full details for an OfferUp listing id, URL, or search result."""
+    from backend.services.offerup_graphql import get_offerup_listing_detail as get_detail
+
+    return await get_detail(item)
 
 
 async def search_kit(
@@ -513,7 +517,7 @@ async def search_kit(
     capture_images_per_slot: int = 5,
     location: str | None = None,
 ) -> list[dict]:
-    """Run every kit slot for `hobby` in one Chrome session and merge results.
+    """Run every kit slot for `hobby` via OfferUp GraphQL and merge results.
 
     Each returned listing carries an `item_type` tag matching its kit slot.
     """
@@ -525,25 +529,18 @@ async def search_kit(
         )
 
     all_listings: list[dict] = []
-    async with async_playwright() as p:
-        context = await launch_logged_in_chrome(p)
-        try:
-            page = context.pages[0] if context.pages else await context.new_page()
-            for slot in queries:
-                slot_listings = await _run_one_search(
-                    page,
-                    slot["query"],
-                    max_price=slot.get("max_price"),
-                    max_results=max_results_per_slot,
-                    scrolls=scrolls,
-                    capture_images=capture_images_per_slot,
-                    item_type=slot["item_type"],
-                    location=location,
-                    snap_label=f"offerup_search_{slot['item_type']}",
-                )
-                all_listings.extend(slot_listings)
-        finally:
-            await context.close()
+    for slot in queries:
+        slot_listings = await search_offerup(
+            slot["query"],
+            max_price=slot.get("max_price"),
+            max_results=max_results_per_slot,
+            scrolls=scrolls,
+            capture_images=capture_images_per_slot,
+            location=location,
+        )
+        for listing in slot_listings:
+            listing["item_type"] = slot["item_type"]
+        all_listings.extend(slot_listings)
 
     return all_listings
 
