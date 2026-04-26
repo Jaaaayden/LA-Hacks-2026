@@ -20,6 +20,7 @@ from backend.services.bargain import (
     add_to_bargain,
     get_bargain_items,
     get_negotiation_poller_status,
+    poll_bargain_messages,
     start_negotiation_poller,
     stop_negotiation_poller,
 )
@@ -237,6 +238,16 @@ async def bargain_listings(
 @app.get("/shopping-lists/{shopping_list_id}/bargain-items")
 async def list_bargain_items(shopping_list_id: str) -> list[dict[str, Any]]:
     return await get_bargain_items(shopping_list_id)
+
+
+@app.post("/shopping-lists/{shopping_list_id}/bargain-items/poll-messages")
+async def poll_selected_listing_messages(shopping_list_id: str) -> dict[str, Any]:
+    try:
+        return await poll_bargain_messages(shopping_list_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/shopping-lists/{shopping_list_id}/negotiation-poller/start")

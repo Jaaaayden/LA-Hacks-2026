@@ -111,6 +111,31 @@ def test_to_listing_offerup() -> None:
     assert listing.price_usd == 100.0
 
 
+def test_to_listing_accepts_numeric_offerup_condition_code() -> None:
+    raw = {
+        "title": "Burton Snowboard",
+        "price": 100,
+        "location_detail": {
+            "name": "Huntington Park, CA",
+            "latitude": "33.985",
+            "longitude": "-118.207",
+        },
+        "condition_code": 40,
+        "url": "https://offerup.com/item/detail/e9f3b6d8-05cb-310a-a4c5-6411561487b0",
+    }
+    listing = to_listing(
+        raw,
+        hobby="snowboarding",
+        search_query="snowboard",
+        scraped_at=_NOW,
+    )
+    assert listing is not None
+    assert listing.platform_id == "e9f3b6d8-05cb-310a-a4c5-6411561487b0"
+    assert listing.condition is None
+    assert listing.condition_code == "40"
+    assert listing.location.raw == "Huntington Park, CA"
+
+
 def test_to_listing_drops_garbage_image_url() -> None:
     raw = {
         "title": "Snowboard",

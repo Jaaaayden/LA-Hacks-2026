@@ -55,6 +55,10 @@ export const api = {
     }),
   getBargainItems: (shoppingListId) =>
     request(`/shopping-lists/${shoppingListId}/bargain-items`),
+  pollBargainMessages: (shoppingListId) =>
+    request(`/shopping-lists/${shoppingListId}/bargain-items/poll-messages`, {
+      method: "POST",
+    }),
   startNegotiationPoller: (shoppingListId) =>
     request(`/shopping-lists/${shoppingListId}/negotiation-poller/start`, {
       method: "POST",

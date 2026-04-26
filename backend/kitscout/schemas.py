@@ -134,9 +134,20 @@ class BargainItem(BaseModel):
     price_usd: float
     target_price_usd: float
     url: str
+    thread_url: str | None = None
     image_url: str | None = None
     location_raw: str | None = None
-    status: Literal["queued", "messaging", "agreed", "gave_up", "error"] = "queued"
+    status: Literal[
+        "queued",
+        "selected",
+        "questions_sent",
+        "details_received",
+        "ready_to_negotiate",
+        "negotiating",
+        "agreed",
+        "gave_up",
+        "error",
+    ] = "selected"
     conversation: list[dict[str, str]] = Field(default_factory=list)
     last_message: str | None = None
     last_seller_message: str | None = None

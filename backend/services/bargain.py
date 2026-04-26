@@ -24,6 +24,8 @@ from playwright.async_api import Page, async_playwright
 from backend.kitscout.db import bargain_items, listings, shopping_lists
 from backend.kitscout.schemas import BargainItem
 from backend.services.gen_negotiation_message import gen_negotiation_message
+from backend.services.offerup_message_reader import check_offerup_thread_messages
+from backend.services.seller_reply_enricher import enrich_listing_from_seller_reply
 
 MESSAGE_PAGE_CONCURRENCY = 3
 NEGOTIATION_POLL_INTERVAL_SECONDS = 60
@@ -75,6 +77,70 @@ def _effective_target_price(asking_price_usd: float, target_price_usd: float) ->
         target = asking - 1
 
     return round(max(0.0, target), 2)
+
+
+def _seller_question_text(question: Any) -> str:
+    if isinstance(question, dict):
+        return str(question.get("question") or "").strip()
+    return str(question or "").strip()
+
+
+def _build_seller_detail_message(item_data: dict[str, Any]) -> str:
+    """Ask only for important missing listing details before negotiation."""
+    seller_questions = [
+        _seller_question_text(question)
+        for question in (item_data.get("seller_questions") or [])
+    ]
+    questions = [question for question in seller_questions if question][:3]
+    if not questions:
+        missing_fields = [
+            str(field).replace("_", " ").strip()
+            for field in (item_data.get("missing_fields") or [])
+            if str(field or "").strip()
+        ][:3]
+        if missing_fields:
+            fields = ", ".join(missing_fields)
+            questions = [f"Could you confirm the {fields}?"]
+
+    if not questions:
+        questions = [
+            "Could you confirm the condition and whether there are any issues I should know about?"
+        ]
+
+    joined = " ".join(questions)
+    return f"Hi, I'm interested in this. {joined}"
+
+
+def _merge_listing_attributes(
+    existing: list[dict[str, Any]],
+    new_attributes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in [*existing, *new_attributes]:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "").strip()
+        value = str(row.get("value") or "").strip()
+        if not key or not value:
+            continue
+        dedupe_key = (key.lower(), value.lower())
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        merged.append(dict(row))
+    return merged
+
+
+def _field_satisfied(field: Any, satisfied_fields: list[str]) -> bool:
+    normalized = _normalize_text(str(field or "").replace("_", " "))
+    if not normalized:
+        return True
+    for satisfied in satisfied_fields:
+        other = _normalize_text(str(satisfied or "").replace("_", " "))
+        if other and (normalized == other or normalized in other or other in normalized):
+            return True
+    return False
 
 
 async def _prepare_offerup_chat(
@@ -282,7 +348,7 @@ async def _fill_and_send_chat_message(
     raise RuntimeError(f"Could not find message input on {listing_url}")
 
 
-async def _send_message_on_offerup(page: Page, listing_url: str, message: str) -> None:
+async def _send_message_on_offerup(page: Page, listing_url: str, message: str) -> str:
     await _prepare_offerup_chat(page, listing_url, debug_snapshot=True)
     await _fill_and_send_chat_message(
         page,
@@ -290,6 +356,7 @@ async def _send_message_on_offerup(page: Page, listing_url: str, message: str) -
         message,
         debug_snapshot=True,
     )
+    return page.url
 
 
 async def _extract_chat_candidates(page: Page) -> list[dict[str, str]]:
@@ -414,7 +481,7 @@ async def _read_new_seller_reply_on_offerup(page: Page, item_data: dict[str, Any
 
 
 async def _message_all_items(items_data: list[dict[str, Any]], out: queue.Queue) -> None:
-    """Drive one Chrome session and send opening messages (parallel pages)."""
+    """Drive one Chrome session and send seller detail questions."""
     from backend.services._browser_offerup import launch_logged_in_chrome
 
     if not items_data:
@@ -425,7 +492,6 @@ async def _message_all_items(items_data: list[dict[str, Any]], out: queue.Queue)
         try:
             concurrency = max(1, min(MESSAGE_PAGE_CONCURRENCY, len(items_data)))
             semaphore = asyncio.Semaphore(concurrency)
-            loop = asyncio.get_running_loop()
 
             async def send_one(item_data: dict[str, Any]) -> None:
                 listing_id = item_data["listing_id"]
@@ -433,31 +499,13 @@ async def _message_all_items(items_data: list[dict[str, Any]], out: queue.Queue)
                 async with semaphore:
                     page = await context.new_page()
                     try:
-                        asking_price = float(item_data["price_usd"])
-                        effective_target = _effective_target_price(
-                            asking_price,
-                            float(item_data["target_price_usd"]),
+                        message = _build_seller_detail_message(item_data)
+                        thread_url = await _send_message_on_offerup(
+                            page,
+                            item_data["url"],
+                            message,
                         )
-                        result = await loop.run_in_executor(
-                            None,
-                            gen_negotiation_message,
-                            item_data["title"],
-                            asking_price,
-                            effective_target,
-                            [],
-                        )
-                        message = result.get("message") or ""
-                        action = result.get("action", "send")
-
-                        if action == "give_up" or not message:
-                            out.put(("gave_up", listing_id))
-                            return
-
-                        await _send_message_on_offerup(page, item_data["url"], message)
-                        if action == "accept":
-                            out.put(("agreed", listing_id, message))
-                        else:
-                            out.put(("sent", listing_id, message))
+                        out.put(("sent", listing_id, message, thread_url))
                     except Exception as exc:
                         print(f"[bargain] opening message failed for {listing_id!r}: {exc!r}")
                         out.put(("error", listing_id, str(exc)))
@@ -509,31 +557,33 @@ async def _run_messaging(items_data: list[dict[str, Any]]) -> None:
                     listing_id = msg[1]
                     await bargain_items.update_one(
                         {"listing_id": listing_id},
-                        {"$set": {"status": "messaging", "updated_at": _now()}},
+                        {"$set": {"status": "selected", "updated_at": _now()}},
                     )
                 elif kind == "sent":
-                    listing_id, message = msg[1], msg[2]
+                    listing_id, message, thread_url = msg[1], msg[2], msg[3]
                     await bargain_items.update_one(
                         {"listing_id": listing_id},
                         {
                             "$set": {
-                                "status": "messaging",
+                                "status": "questions_sent",
                                 "last_message": message,
+                                "thread_url": thread_url,
                                 "updated_at": _now(),
                             },
                             "$push": {
-                                "conversation": {"role": "negotiator", "content": message}
+                                "conversation": {"role": "buyer", "content": message}
                             },
                         },
                     )
                 elif kind == "agreed":
-                    listing_id, message = msg[1], msg[2]
+                    listing_id, message, thread_url = msg[1], msg[2], msg[3]
                     await bargain_items.update_one(
                         {"listing_id": listing_id},
                         {
                             "$set": {
                                 "status": "agreed",
                                 "last_message": message,
+                                "thread_url": thread_url,
                                 "updated_at": _now(),
                             },
                             "$push": {
@@ -643,7 +693,10 @@ def _poll_thread_target(items_data: list[dict[str, Any]], out: queue.Queue) -> N
 
 async def _run_poll_cycle(shopping_list_id: str) -> None:
     docs = await bargain_items.find(
-        {"shopping_list_id": shopping_list_id, "status": "messaging"}
+        {
+            "shopping_list_id": shopping_list_id,
+            "status": "negotiating",
+        }
     ).to_list(None)
     if not docs:
         return
@@ -709,7 +762,7 @@ async def _run_poll_cycle(shopping_list_id: str) -> None:
                         {"shopping_list_id": shopping_list_id, "listing_id": listing_id},
                         {
                             "$set": {
-                                "status": "messaging",
+                                "status": "negotiating",
                                 "last_message": message,
                                 "updated_at": _now(),
                             },
@@ -830,10 +883,10 @@ async def add_to_bargain(
     item_id: str,
     listing_ids: list[str],
 ) -> list[dict[str, Any]]:
-    """Persist selected listings as BargainItems and fire opening messages.
+    """Persist selected listings and send pre-negotiation detail questions.
 
     Idempotent: if a listing_id is already in bargain_items for this list,
-    the existing doc is returned without creating a duplicate or re-messaging.
+    the existing doc is returned without creating a duplicate or re-contacting.
     """
     shopping_list = await shopping_lists.find_one({"_id": _object_id(shopping_list_id)})
     if shopping_list is None:
@@ -894,6 +947,8 @@ async def add_to_bargain(
                     "price_usd": bargain_doc.price_usd,
                     "target_price_usd": bargain_doc.target_price_usd,
                     "url": bargain_doc.url,
+                    "seller_questions": list(doc.get("seller_questions") or []),
+                    "missing_fields": list(doc.get("missing_fields") or []),
                 }
             )
 
@@ -903,7 +958,6 @@ async def add_to_bargain(
         if fresh:
             created.append(_serialize(fresh))
 
-    _ensure_negotiation_poller(shopping_list_id)
     if new_items_data:
         asyncio.create_task(_run_messaging(new_items_data))
 
@@ -913,3 +967,144 @@ async def add_to_bargain(
 async def get_bargain_items(shopping_list_id: str) -> list[dict[str, Any]]:
     cursor = bargain_items.find({"shopping_list_id": shopping_list_id}).sort("added_at", 1)
     return [_serialize(doc) async for doc in cursor]
+
+
+async def poll_bargain_messages(shopping_list_id: str) -> dict[str, Any]:
+    """Read stored OfferUp threads and persist new seller replies without negotiating."""
+    shopping_list = await shopping_lists.find_one({"_id": _object_id(shopping_list_id)})
+    if shopping_list is None:
+        raise ValueError(f"Shopping list not found: {shopping_list_id}")
+
+    docs = await bargain_items.find(
+        {
+            "shopping_list_id": shopping_list_id,
+            "status": {"$in": ["questions_sent", "ready_to_negotiate", "negotiating"]},
+        }
+    ).to_list(None)
+
+    checked: list[dict[str, Any]] = []
+    updated: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for doc in docs:
+        listing_id = str(doc.get("listing_id") or "")
+        thread_url = str(doc.get("thread_url") or "")
+        if not listing_id:
+            continue
+        if not thread_url:
+            skipped.append(
+                {
+                    "listing_id": listing_id,
+                    "reason": "missing_thread_url",
+                }
+            )
+            continue
+
+        known_messages = [
+            str(turn.get("content") or "")
+            for turn in (doc.get("conversation") or [])
+            if isinstance(turn, dict) and turn.get("content")
+        ]
+        result = await check_offerup_thread_messages(
+            thread_url,
+            known_messages=known_messages,
+        )
+        checked.append(
+            {
+                "listing_id": listing_id,
+                "thread_url": thread_url,
+                "has_new_message": bool(result.get("has_new_message")),
+                "latest_message": result.get("latest_message"),
+            }
+        )
+
+        seller_reply = result.get("latest_message")
+        if not seller_reply:
+            continue
+
+        listing_doc = await listings.find_one(
+            {"platform_id": listing_id, "list_id": shopping_list_id}
+        )
+        enrichment: dict[str, Any] = {
+            "extracted_attributes": [],
+            "satisfied_missing_fields": [],
+            "notes": "",
+        }
+        if listing_doc:
+            enrichment = enrich_listing_from_seller_reply(
+                listing=listing_doc,
+                bargain_item=doc,
+                seller_reply=str(seller_reply),
+            )
+            satisfied_fields = list(enrichment.get("satisfied_missing_fields") or [])
+            merged_attributes = _merge_listing_attributes(
+                list(listing_doc.get("extracted_attributes") or []),
+                list(enrichment.get("extracted_attributes") or []),
+            )
+            remaining_missing_fields = [
+                field
+                for field in (listing_doc.get("missing_fields") or [])
+                if not _field_satisfied(field, satisfied_fields)
+            ]
+            remaining_questions = [
+                question
+                for question in (listing_doc.get("seller_questions") or [])
+                if not (
+                    isinstance(question, dict)
+                    and _field_satisfied(question.get("field"), satisfied_fields)
+                )
+            ]
+            notes = str(enrichment.get("notes") or "").strip()
+            existing_notes = str(listing_doc.get("attribute_notes") or "").strip()
+            next_notes = existing_notes
+            if notes:
+                next_notes = (
+                    f"{existing_notes}\nSeller reply: {notes}"
+                    if existing_notes
+                    else f"Seller reply: {notes}"
+                )
+
+            await listings.update_one(
+                {"_id": listing_doc["_id"]},
+                {
+                    "$set": {
+                        "extracted_attributes": merged_attributes,
+                        "missing_fields": remaining_missing_fields,
+                        "seller_questions": remaining_questions,
+                        "attribute_notes": next_notes,
+                    }
+                },
+            )
+
+        await bargain_items.update_one(
+            {"shopping_list_id": shopping_list_id, "listing_id": listing_id},
+            {
+                "$set": {
+                    "status": "ready_to_negotiate",
+                    "last_seller_message": seller_reply,
+                    "updated_at": _now(),
+                },
+                "$push": {
+                    "conversation": {"role": "seller", "content": seller_reply}
+                },
+            },
+        )
+        updated.append(
+            {
+                "listing_id": listing_id,
+                "thread_url": thread_url,
+                "message": seller_reply,
+                "enrichment": enrichment,
+                "status": "ready_to_negotiate",
+            }
+        )
+
+    return {
+        "shopping_list_id": shopping_list_id,
+        "checked_count": len(checked),
+        "updated_count": len(updated),
+        "skipped_count": len(skipped),
+        "checked": checked,
+        "updated": updated,
+        "skipped": skipped,
+    }
