@@ -13,6 +13,11 @@ from backend.services.query_flow import (
     get_shopping_list,
     update_shopping_list,
 )
+from backend.services.search_jobs import (
+    get_candidates,
+    get_search_status,
+    start_search,
+)
 
 app = FastAPI(title="KitScout API")
 
@@ -113,3 +118,28 @@ async def patch_shopping_list(
         return await update_shopping_list(shopping_list_id, updates)
     except ValueError as exc:
         raise _http_error(exc) from exc
+
+
+@app.post("/shopping-lists/{shopping_list_id}/search", status_code=202)
+async def start_shopping_list_search(shopping_list_id: str) -> dict[str, Any]:
+    try:
+        return await start_search(shopping_list_id)
+    except ValueError as exc:
+        if "in progress" in str(exc):
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise _http_error(exc) from exc
+
+
+@app.get("/shopping-lists/{shopping_list_id}/search-status")
+async def get_shopping_list_search_status(shopping_list_id: str) -> dict[str, Any]:
+    job = await get_search_status(shopping_list_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No search job for this list.")
+    return job
+
+
+@app.get("/shopping-lists/{shopping_list_id}/candidates")
+async def get_shopping_list_candidates(
+    shopping_list_id: str,
+) -> dict[str, list[dict[str, Any]]]:
+    return await get_candidates(shopping_list_id)
