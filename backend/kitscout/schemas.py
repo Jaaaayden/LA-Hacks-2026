@@ -16,9 +16,9 @@ class Query(BaseModel):
     raw_messages: list[str]
     parsed_intent: dict[str, Any]
     status: Literal[
-        "needs_followup",
-        "ready_for_list",
+        "followups_ready",
         "shopping_list_created",
+        "shopping_list_edited",
         "failed",
     ]
     created_at: datetime

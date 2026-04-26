@@ -17,14 +17,16 @@ backend/                       # Python backend (services + LLM prompts)
     intent_parser.txt          # system prompt for the intent parser
     followup.txt               # empty stub from teammate
   services/
-    intent_parser.py           # parse_intent(query) -> ParsedIntent (Claude Haiku 4.5)
-    query.py                   # record_query(text) -> (ParsedIntent, query_id) — parser + db bridge
-    followup.service.js        # ⚠️ JS file from teammate; backend language is unresolved
+    intent_parser.py           # parse_intent(text, skeleton) -> dict
+    gen_followup.py            # generate follow-up questions + hobby-specific flags
+    gen_list.py                # generate shopping list JSON from completed intent
+    query_flow.py              # Mongo-backed prompt/follow-up/shopping-list lifecycle
+    listing_store.py           # normalize/upsert scraper output into listings
 
-kitscout/                      # MongoDB Atlas data layer
-  db.py                        # AsyncIOMotorClient + collection refs (listings, item_comps, queries, offers)
-  schemas.py                   # Pydantic v2 models: Listing, ItemComp, Query, Offer, Location
-  indexes.py                   # ensure_indexes() — currently: unique fb_id on listings
+backend/kitscout/              # MongoDB Atlas data layer
+  db.py                        # AsyncIOMotorClient + collection refs (queries, shopping_lists, listings)
+  schemas.py                   # Pydantic v2 models: Query, ShoppingList, Listing, Location
+  indexes.py                   # ensure_indexes() for the three active collections
 
 frontend/                      # Vite + React (teammate)
 
@@ -32,7 +34,7 @@ tests/
   test_parser.py               # 1 schema test + 6 live-API tests (@pytest.mark.integration)
   test_db.py                   # 3 schema tests + 3 mongo round-trip tests (@pytest.mark.mongo)
 
-seed_db.py                     # populates 12 listings + 6 comps + 2 queries + 1 offer (across 3 hobbies)
+seed_db.py                     # populates 1 query + 1 shopping_list + sample listings
 .env / .env.example            # ANTHROPIC_API_KEY, MONGODB_URI
 pyproject.toml                 # editable install + pytest markers; dynamic deps from requirements.txt
 requirements.txt               # runtime deps (single source of truth)
@@ -52,31 +54,30 @@ requirements.txt               # runtime deps (single source of truth)
 User input
    │
    ▼
-record_query()  ────▶  parse_intent()  ────▶  Claude Haiku 4.5
+create_query_session() ─▶ parse_intent() ─▶ Claude
    │  (DONE)              (DONE)
    ▼
 queries collection ──────────────────┐
-                                     │ ParsedIntent
+                                     │ parsed intent + follow-up flags
                                      ▼
-                              SearchAgent  ──▶  scrape FB Marketplace, etc.
-                              (TODO)            ──▶  listings collection
+complete_query_session() ─▶ gen_list() ──▶ shopping_lists collection
                                      │
                                      ▼
-                              Ranker     ──▶  bundle into Offer
-                              (TODO)            ──▶  offers collection
-                                                ──▶  link back via queries.offer_id
+listing_store          ──▶ scraper output ──▶ listings collection
 ```
 
 **Done:**
-- Intent parser (text → `ParsedIntent`)
-- DB layer (4 collections, schemas, unique-fb_id index)
-- Bridge service (`record_query` writes parsed query into `queries`)
+- Intent parser (text + skeleton → dict)
+- DB layer (3 collections: `queries`, `shopping_lists`, `listings`)
+- Query flow service stores parsed queries, follow-ups, and generated shopping lists
+- Listing store service links scraper output back to shopping list item searches
 - Sample data (`seed_db.py`)
 - Tests with cleanup (no leftover data on cluster)
 
 **Not done — likely next steps:**
-- SearchAgent: scrape Facebook Marketplace / Craigslist for listings, write to `listings`
-- Ranker: read `listings` + `item_comps`, build curated `Offer`, link back to `queries.offer_id`
+- API surface for frontend calls
+- Search orchestration: call scraper from shopping list item `search_query` values
+- Ranking/selection logic over `listings` for each shopping list item
 - API surface: a uAgent or HTTP endpoint that the frontend can call
 - Frontend ↔ backend wiring
 
@@ -91,10 +92,7 @@ cp .env.example .env                      # then fill in ANTHROPIC_API_KEY and M
 # Run the parser on a single query (single-quote queries with $ to avoid shell expansion!)
 .venv/bin/python -m backend.services.intent_parser 'i want to snowboard for under $250'
 
-# Parse + store in queries collection
-.venv/bin/python -m backend.services.query 'i want to snowboard for under $250'
-
-# Populate sample data (wipes + reseeds the 4 collections)
+# Populate sample data (wipes + reseeds the 3 active collections)
 .venv/bin/python seed_db.py
 
 # Run all tests (skips integration/mongo tests if env vars aren't set)
@@ -106,10 +104,10 @@ cp .env.example .env                      # then fill in ANTHROPIC_API_KEY and M
 - **Type hints** on every function signature.
 - **Pydantic v2** for any data structure that crosses a module boundary.
 - **Async everywhere** for db access (motor is async; uAgents handlers are async).
-- **Don't create your own MongoClient.** Always import from `kitscout.db`. The connection pool is shared per-process.
+- **Don't create your own MongoClient.** Always import from `backend.kitscout.db`. The connection pool is shared per-process.
 - **Service layer for db ops** — when a query is used in 2+ places, extract it into `backend/services/<name>.py` and import from there. Inline motor calls are fine for one-off operations.
 - **Prompts as text files** in `backend/prompts/`, loaded at import. Tweak prompts without code changes.
-- **No secrets in code.** Both API keys live in `.env`; `backend/__init__.py` and `kitscout/db.py` both call `load_dotenv()`. `.env` is gitignored.
+- **No secrets in code.** Both API keys live in `.env`; `backend/__init__.py` and `backend/kitscout/db.py` both call `load_dotenv()`. `.env` is gitignored.
 
 ## Open decisions / coordination items
 

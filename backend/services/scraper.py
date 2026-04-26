@@ -8,7 +8,7 @@ Usage:
     # Scrape and print JSON to stdout
     python -m backend.services.scraper "snowboard" --city losangeles --max-price 300
 
-    # Scrape and ingest directly into MongoDB
+    # Scrape and upsert directly into MongoDB
     python -m backend.services.scraper "snowboard" --max-price 300 --ingest
 
     # Scrape and save to disk (matches the JS scraper's output shape)
@@ -147,7 +147,7 @@ async def _main() -> None:
     parser.add_argument(
         "--ingest",
         action="store_true",
-        help="After scraping, upsert directly into MongoDB via backend.services.ingest",
+        help="After scraping, upsert directly into MongoDB via backend.services.listing_store",
     )
     parser.add_argument(
         "--hobby",
@@ -176,11 +176,11 @@ async def _main() -> None:
         print(f"[scraper] saved to {args.save}")
 
     if args.ingest:
-        from backend.services.ingest import ingest_listings
+        from backend.services.listing_store import upsert_scraped_listings
 
-        result = await ingest_listings(
+        result = await upsert_scraped_listings(
             listings,
-            query=args.query,
+            search_query=args.query,
             hobby=args.hobby,
         )
         print(
