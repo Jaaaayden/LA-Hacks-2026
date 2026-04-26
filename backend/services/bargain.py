@@ -311,41 +311,124 @@ async def _fill_and_send_chat_message(
     ):
         try:
             inp = page.locator(sel).last
-            if await inp.is_visible(timeout=2500):
-                await inp.click()
-                await inp.fill(message)
-                await asyncio.sleep(0.4)
-
-                sent = False
-                for send_sel in (
-                    'button:has-text("Send")',
-                    '[aria-label*="Send" i]',
-                    '[data-testid*="send"]',
-                ):
-                    try:
-                        send_btn = page.locator(send_sel).first
-                        if await send_btn.is_visible(timeout=1500):
-                            await send_btn.click()
-                            sent = True
-                            break
-                    except Exception:
-                        continue
-                if not sent:
-                    await inp.press("Enter")
-
-                if debug_snapshot:
-                    debug_dir = Path("scraper/output/debug")
-                    debug_dir.mkdir(parents=True, exist_ok=True)
-                    await page.screenshot(
-                        path=str(
-                            debug_dir / f"msg_after_{_listing_token(listing_url)}.png"
-                        )
-                    )
-                return
+            if not await inp.is_visible(timeout=2500):
+                continue
+            await inp.click()
+            await inp.fill(message)
         except Exception:
             continue
 
+        await asyncio.sleep(0.4)
+        await _send_current_message(inp, message)
+
+        if debug_snapshot:
+            debug_dir = Path("scraper/output/debug")
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            await page.screenshot(
+                path=str(debug_dir / f"msg_after_{_listing_token(listing_url)}.png")
+            )
+        return
+
     raise RuntimeError(f"Could not find message input on {listing_url}")
+
+
+async def _composer_text(inp) -> str:
+    value = await inp.evaluate(
+        """
+        (node) => {
+          const tag = node.tagName?.toLowerCase();
+          if (tag === "textarea" || tag === "input") return node.value || "";
+          return node.innerText || node.textContent || "";
+        }
+        """
+    )
+    return str(value or "").strip()
+
+
+async def _click_nearby_send_control(inp) -> bool:
+    return bool(
+        await inp.evaluate(
+            """
+            (composer) => {
+              const visible = (node) => {
+                const style = window.getComputedStyle(node);
+                const rect = node.getBoundingClientRect();
+                return style.visibility !== "hidden" &&
+                  style.display !== "none" &&
+                  rect.width > 0 &&
+                  rect.height > 0;
+              };
+              const enabled = (node) =>
+                !node.disabled &&
+                node.getAttribute("aria-disabled") !== "true" &&
+                !node.hasAttribute("disabled");
+              const labelFor = (node) => [
+                node.innerText,
+                node.textContent,
+                node.getAttribute("aria-label"),
+                node.getAttribute("title"),
+                node.getAttribute("data-testid"),
+              ].filter(Boolean).join(" ").trim().toLowerCase();
+
+              const composerRect = composer.getBoundingClientRect();
+              const candidates = Array.from(
+                document.querySelectorAll("button, [role='button'], input[type='submit']")
+              )
+                .filter((node) => {
+                  const label = labelFor(node);
+                  return visible(node) &&
+                    enabled(node) &&
+                    (label === "send" || label.includes("send"));
+                })
+                .map((node) => {
+                  const rect = node.getBoundingClientRect();
+                  const verticalDistance = Math.abs(
+                    (rect.top + rect.bottom) / 2 - (composerRect.top + composerRect.bottom) / 2
+                  );
+                  const horizontalDistance = Math.abs(rect.left - composerRect.right);
+                  return { node, score: verticalDistance * 4 + horizontalDistance };
+                })
+                .sort((a, b) => a.score - b.score);
+
+              const target = candidates[0]?.node;
+              if (!target) return false;
+              target.scrollIntoView({ block: "center", behavior: "instant" });
+              target.click();
+              return true;
+            }
+            """
+        )
+    )
+
+
+async def _send_current_message(inp, message: str) -> None:
+    """Submit the focused composer and verify the draft leaves the input."""
+    sent = False
+    for _ in range(8):
+        if await _click_nearby_send_control(inp):
+            sent = True
+            break
+        await asyncio.sleep(0.25)
+
+    if not sent:
+        for key in ("ControlOrMeta+Enter", "Enter"):
+            try:
+                await inp.press(key)
+                sent = True
+                break
+            except Exception:
+                continue
+
+    if not sent:
+        raise RuntimeError("Could not find an enabled OfferUp Send button.")
+
+    for _ in range(12):
+        await asyncio.sleep(0.25)
+        current_text = await _composer_text(inp)
+        if not current_text or _normalize_text(current_text) != _normalize_text(message):
+            return
+
+    raise RuntimeError("OfferUp message did not send; the draft is still in the composer.")
 
 
 async def _send_message_on_offerup(page: Page, listing_url: str, message: str) -> str:

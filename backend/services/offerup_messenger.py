@@ -52,7 +52,7 @@ async def _snap(page: Page, label: str) -> None:
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     try:
         await page.screenshot(path=str(DEBUG_DIR / f"{label}.png"), full_page=False)
-        print(f"[offerup-msg] snap → {DEBUG_DIR / f'{label}.png'}")
+        print(f"[offerup-msg] snap -> {DEBUG_DIR / f'{label}.png'}")
     except Exception as e:
         print(f"[offerup-msg] snap '{label}' failed: {e}")
 
@@ -193,6 +193,86 @@ async def _resolve_composer(page: Page):
     raise RuntimeError("no message input found on page")
 
 
+async def _composer_text(composer) -> str:
+    value = await composer.evaluate(
+        """
+        (node) => {
+          const tag = node.tagName?.toLowerCase();
+          if (tag === "textarea" || tag === "input") return node.value || "";
+          return node.innerText || node.textContent || "";
+        }
+        """
+    )
+    return str(value or "").strip()
+
+
+async def _click_nearby_send_control(composer) -> bool:
+    return bool(
+        await composer.evaluate(
+            """
+            (composer) => {
+              const visible = (node) => {
+                const style = window.getComputedStyle(node);
+                const rect = node.getBoundingClientRect();
+                return style.visibility !== "hidden" &&
+                  style.display !== "none" &&
+                  rect.width > 0 &&
+                  rect.height > 0;
+              };
+              const enabled = (node) =>
+                !node.disabled &&
+                node.getAttribute("aria-disabled") !== "true" &&
+                !node.hasAttribute("disabled");
+              const labelFor = (node) => [
+                node.innerText,
+                node.textContent,
+                node.getAttribute("aria-label"),
+                node.getAttribute("title"),
+                node.getAttribute("data-testid"),
+              ].filter(Boolean).join(" ").trim().toLowerCase();
+
+              const composerRect = composer.getBoundingClientRect();
+              const candidates = Array.from(
+                document.querySelectorAll("button, [role='button'], input[type='submit']")
+              )
+                .filter((node) => {
+                  const label = labelFor(node);
+                  return visible(node) &&
+                    enabled(node) &&
+                    (label === "send" || label.includes("send"));
+                })
+                .map((node) => {
+                  const rect = node.getBoundingClientRect();
+                  const verticalDistance = Math.abs(
+                    (rect.top + rect.bottom) / 2 - (composerRect.top + composerRect.bottom) / 2
+                  );
+                  const horizontalDistance = Math.abs(rect.left - composerRect.right);
+                  return { node, score: verticalDistance * 4 + horizontalDistance };
+                })
+                .sort((a, b) => a.score - b.score);
+
+              const target = candidates[0]?.node;
+              if (!target) return false;
+              target.scrollIntoView({ block: "center", behavior: "instant" });
+              target.click();
+              return true;
+            }
+            """
+        )
+    )
+
+
+async def _wait_for_draft_to_leave(composer, message_text: str) -> bool:
+    normalized_message = " ".join(message_text.split()).strip().lower()
+    for _ in range(12):
+        await asyncio.sleep(0.25)
+        current_text = await _composer_text(composer)
+        normalized_current = " ".join(current_text.split()).strip().lower()
+        if not normalized_current or normalized_current != normalized_message:
+            return True
+    return False
+
+
 async def _fill_and_send(page: Page, message_text: str) -> None:
     """Locate the composer, type the message, and click Send."""
     await _dump_textboxes(page)
@@ -223,17 +303,30 @@ async def _fill_and_send(page: Page, message_text: str) -> None:
     await asyncio.sleep(0.5)
     await _snap(page, "offerup_02_after_type")
 
-    if await _try_send(page, composer):
+    if await _try_send(page, composer, message_text):
         await asyncio.sleep(2)
         await _snap(page, "offerup_03_after_send")
         return
 
     print("[offerup-msg] all Send strategies failed")
     await _snap(page, "offerup_03_after_send")
+    raise RuntimeError("OfferUp message did not send; the draft is still in the composer.")
 
 
-async def _try_send(page: Page, composer) -> bool:
+async def _try_send(page: Page, composer, message_text: str) -> bool:
     """Try multiple send strategies; return True on first success."""
+
+    # Prefer the enabled send control closest to the focused composer. OfferUp can
+    # render other "Send" text elsewhere on the page, so global first-match clicks
+    # are unreliable.
+    try:
+        for _ in range(8):
+            if await _click_nearby_send_control(composer):
+                print("[offerup-msg] send: nearby enabled send control")
+                return await _wait_for_draft_to_leave(composer, message_text)
+            await asyncio.sleep(0.25)
+    except Exception as e:
+        print(f"[offerup-msg] nearby send strategy failed: {e}")
 
     # Strategy 1: role=button with name "Send"
     try:
@@ -243,7 +336,7 @@ async def _try_send(page: Page, composer) -> bool:
         if await btn.is_visible(timeout=3000):
             print("[offerup-msg] send: role=button name=Send")
             await btn.click()
-            return True
+            return await _wait_for_draft_to_leave(composer, message_text)
     except Exception as e:
         print(f"[offerup-msg] strategy 1 failed: {e}")
 
@@ -253,7 +346,7 @@ async def _try_send(page: Page, composer) -> bool:
         if await btn.is_visible(timeout=2000):
             print("[offerup-msg] send: button:has-text(Send)")
             await btn.click()
-            return True
+            return await _wait_for_draft_to_leave(composer, message_text)
     except Exception as e:
         print(f"[offerup-msg] strategy 2 failed: {e}")
 
@@ -263,7 +356,7 @@ async def _try_send(page: Page, composer) -> bool:
         if await btn.is_visible(timeout=2000):
             print("[offerup-msg] send: [aria-label=Send]")
             await btn.click()
-            return True
+            return await _wait_for_draft_to_leave(composer, message_text)
     except Exception as e:
         print(f"[offerup-msg] strategy 3 failed: {e}")
 
@@ -273,7 +366,7 @@ async def _try_send(page: Page, composer) -> bool:
         if await btn.is_visible(timeout=2000):
             print("[offerup-msg] send: button[type=submit]")
             await btn.click()
-            return True
+            return await _wait_for_draft_to_leave(composer, message_text)
     except Exception as e:
         print(f"[offerup-msg] strategy 4 failed: {e}")
 
@@ -281,7 +374,7 @@ async def _try_send(page: Page, composer) -> bool:
     try:
         print("[offerup-msg] send: Enter")
         await composer.press("Enter")
-        return True
+        return await _wait_for_draft_to_leave(composer, message_text)
     except Exception as e:
         print(f"[offerup-msg] strategy 5 failed: {e}")
 
