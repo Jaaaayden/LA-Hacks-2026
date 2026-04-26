@@ -292,6 +292,7 @@ export function buildKitFor({ hobby, budgetUsd } = {}) {
     budget_usd: budgetUsd ?? template.default_budget_usd,
     items: template.items.map((it) => ({
       ...it,
+      budget_usd: it.budget_usd ?? it.price_usd,
       preferences: it.preferences.map((p) => ({ ...p })),
       checked: it.default_checked,
     })),

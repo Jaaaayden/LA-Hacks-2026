@@ -3,6 +3,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
@@ -35,6 +36,21 @@ _OTHER_FLAGS_TOOL = {
 }
 
 
+_DEFER_PHRASES = (
+    "i don't know",
+    "i dont know",
+    "don't know",
+    "dont know",
+    "not sure",
+    "unsure",
+    "calculate",
+    "figure it out",
+    "you decide",
+    "recommend",
+    "pick for me",
+)
+
+
 def _as_dict(intent):
     if isinstance(intent, str):
         return json.loads(intent)
@@ -48,15 +64,73 @@ def _has_nulls(intent):
     return False
 
 
-def _needs_followup_questions(intent, other_flags):
-    flags = other_flags if other_flags else []
-    return _has_nulls(intent) or bool(flags)
-
-
 def _raw_query_text(raw_query):
     if isinstance(raw_query, list):
         return "\n".join(str(q) for q in raw_query if q)
     return str(raw_query or "")
+
+
+def _user_deferred_flag(flag: dict[str, Any], raw_query: str) -> bool:
+    haystack = raw_query.lower()
+    if not haystack or not any(phrase in haystack for phrase in _DEFER_PHRASES):
+        return False
+    labels = [
+        str(flag.get("label") or "").lower(),
+        str(flag.get("key") or "").replace("_", " ").lower(),
+    ]
+    return any(label and label in haystack for label in labels)
+
+
+def _unanswered_flags(intent) -> list[dict]:
+    d = _as_dict(intent)
+    other = d.get("other")
+    if not isinstance(other, list):
+        return []
+    raw_query = _raw_query_text(d.get("raw_query"))
+    flags = []
+    for row in other:
+        if not isinstance(row, dict):
+            continue
+        value = row.get("value")
+        if (value is None or value == "") and not _user_deferred_flag(row, raw_query):
+            flags.append(row)
+    return flags
+
+
+def _question_tokens(question: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", question.lower())
+        if len(token) > 2
+    }
+
+
+def _is_repeat_question(question: str, previous_questions: list[str]) -> bool:
+    tokens = _question_tokens(question)
+    if not tokens:
+        return False
+    normalized = " ".join(sorted(tokens))
+    for previous in previous_questions:
+        previous_tokens = _question_tokens(previous)
+        if not previous_tokens:
+            continue
+        if normalized == " ".join(sorted(previous_tokens)):
+            return True
+        overlap = len(tokens & previous_tokens) / len(tokens | previous_tokens)
+        if overlap >= 0.72:
+            return True
+    return False
+
+
+def _dedupe_questions(questions: list[str], previous_questions: list[str]) -> list[str]:
+    out: list[str] = []
+    seen = list(previous_questions)
+    for question in questions:
+        if _is_repeat_question(question, seen):
+            continue
+        out.append(question)
+        seen.append(question)
+    return out
 
 
 def _questions_blob_to_list(text: str) -> list[str]:
@@ -75,10 +149,14 @@ def _questions_blob_to_list(text: str) -> list[str]:
     return out
 
 
-def followup_questions_from_intent(intent, other_flags=None, model="claude-sonnet-4-5"):
+def followup_questions_from_intent(
+    intent,
+    other_flags=None,
+    model="claude-sonnet-4-5",
+    previous_questions=None,
+):
     flags = list(other_flags) if other_flags else []
-    if not _needs_followup_questions(intent, flags):
-        return "No follow-up questions needed."
+    asked = list(previous_questions) if previous_questions else []
 
     load_dotenv()
     key = os.environ.get("ANTHROPIC_API_KEY")
@@ -91,6 +169,9 @@ def followup_questions_from_intent(intent, other_flags=None, model="claude-sonne
     if flags:
         user_body += "\n\nHobby-specific flags (one follow-up question each):\n"
         user_body += json.dumps(flags, indent=2)
+    if asked:
+        user_body += "\n\nQuestions already asked; do not repeat these:\n"
+        user_body += json.dumps(asked, indent=2)
     client = Anthropic(api_key=key)
     msg = client.messages.create(
         model=model,
@@ -161,10 +242,11 @@ def gen_followup(
     include_hobby_other_flags=False,
     model="claude-sonnet-4-5",
     merged_intent_out=None,
+    previous_questions=None,
 ):
     """
-    Returns ``{"questions": [...]}`` — one string per null intent field (except
-    ``raw_query``) and per hobby flag when enabled.
+    Returns ``{"questions": [...]}`` for unresolved intent fields, unresolved
+    hobby flags, and any extra questions needed for a comprehensive kit.
 
     Merged intent (same keys as input; ``other`` filled with flag rows when
     ``include_hobby_other_flags`` is True) is **not** in the return value. Pass an
@@ -179,10 +261,18 @@ def gen_followup(
             d.get("raw_query") or "",
             model=model,
         )
+    else:
+        flags = _unanswered_flags(d)
     questions_blob = followup_questions_from_intent(
-        intent, other_flags=flags, model=model
+        intent,
+        other_flags=flags,
+        model=model,
+        previous_questions=previous_questions,
     )
-    questions = _questions_blob_to_list(questions_blob)
+    questions = _dedupe_questions(
+        _questions_blob_to_list(questions_blob),
+        list(previous_questions) if previous_questions else [],
+    )
 
     if merged_intent_out is not None:
         merged = dict(d)

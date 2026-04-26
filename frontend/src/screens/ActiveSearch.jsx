@@ -115,8 +115,12 @@ export default function ActiveSearch() {
           </div>
 
           <div className={styles.itemList}>
-            {filtered.map((it) => (
-              <div key={it.slot} className={styles.itemRow}>
+            {filtered.map((it, idx) => (
+              <div
+                key={it.slot}
+                className={styles.itemRow}
+                style={{ animationDelay: `${idx * 60}ms` }}
+              >
                 <div className={styles.imgWithBadge}>
                   <ImageWithFallback slot={it.slot} size={56} />
                   <span className={styles.dateBadge}>{it.added_label}</span>

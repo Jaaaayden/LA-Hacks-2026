@@ -10,8 +10,17 @@ Each item represents one product to buy. Each item has:
 - item_type: the generic product name
 - search_query: a marketplace search phrase that includes the product name plus
   the most important known buying attributes
+- budget_usd: the target used-market budget for this item in USD
 - attributes: list of direct product spec objects needed to buy/evaluate that item
 - notes: a short explanation only when useful
+
+Decide the budget_usd for each item yourself. Allocate the user's top-level
+budget across the whole kit based on real used-market importance: put more money
+toward the primary item and safety/fit-critical gear, less toward accessories.
+Required items should fit within the top-level budget_usd when one is provided.
+Nice-to-have items may be included only if they are realistic within the budget
+or clearly optional. If the top-level budget_usd is unknown, still provide a
+reasonable target used-market budget for each item.
 
 Use attributes for concrete product specs that determine which specific type of that
 item to buy. Attributes must be exact enough that a person reading the list can pick
