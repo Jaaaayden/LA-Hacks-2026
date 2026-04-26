@@ -7,7 +7,7 @@ each listing is enriched by parsing the item detail page's embedded Next.js data
 Example command:
 
 ```bash
-python -m backend.services.offerup_scraper "snowboard" --location 90024 --max-price 300 --max-results 5 --save snowboard_90024.json
+python -m backend.services.offerup_scraper "snowboard" --location 90024 --min-price 2 --max-price 300 --max-results 5 --save snowboard_90024.json
 ```
 
 ## Top-Level Shape
@@ -16,6 +16,7 @@ python -m backend.services.offerup_scraper "snowboard" --location 90024 --max-pr
 {
   "query": {
     "query": "snowboard",
+    "minPrice": 2,
     "maxPrice": 300
   },
   "listings": []
@@ -104,6 +105,7 @@ Each entry in `listings` has this normalized shape:
 ## Field Notes
 
 - `query.query`: the OfferUp search text.
+- `query.minPrice`: the price floor sent to OfferUp and rechecked locally by the scraper. Defaults to `2` to filter out `$0`/`$1` bait listings.
 - `query.maxPrice`: the local price ceiling applied by the scraper. `null` means no price ceiling.
 - `price`: parsed numeric USD price.
 - `location`: OfferUp's display location for the listing.

@@ -25,6 +25,7 @@ async function request(path, { method = "GET", body, signal } = {}) {
 export const api = {
   createQuery: (userText) =>
     request("/queries", { method: "POST", body: { user_text: userText } }),
+  listQueries: (limit = 12) => request(`/queries?limit=${limit}`),
   getQuery: (queryId) => request(`/queries/${queryId}`),
   answerQuery: (queryId, followupText) =>
     request(`/queries/${queryId}/answers`, {

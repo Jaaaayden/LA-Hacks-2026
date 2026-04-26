@@ -126,6 +126,44 @@ function parseClientSide(text) {
   return { hobby, budget_usd };
 }
 
+function savedAtFrom(value) {
+  const ts = Date.parse(value || "");
+  return Number.isNaN(ts) ? Date.now() : ts;
+}
+
+function savedEntryFromQuery(query) {
+  const queryId = query._id || query.query_id;
+  const shoppingListId = query.shopping_list_id || null;
+  const done = Boolean(shoppingListId);
+  const parsedIntent = query.parsed_intent || {};
+
+  return {
+    id: shoppingListId || queryId,
+    route: done ? `/kit/${shoppingListId}` : `/followup/${queryId}`,
+    queryId,
+    shoppingListId,
+    queryText: query.raw_messages?.[0] || "",
+    parsedIntent: {
+      query_id: queryId,
+      parsed_intent: parsedIntent,
+      followup_questions: done ? [] : query.followup_questions || [],
+      status: query.status,
+      questions_asked_count: query.questions_asked_count,
+      max_followup_questions: query.max_followup_questions,
+      done,
+    },
+    detectedHobby: parsedIntent.hobby || null,
+    detectedBudget: parsedIntent.budget_usd ?? null,
+    hobby: parsedIntent.hobby || null,
+    budget_usd: parsedIntent.budget_usd ?? null,
+    followupQuestions: done ? [] : query.followup_questions || [],
+    followupAnswers: {},
+    kit: null,
+    status: query.status,
+    savedAt: savedAtFrom(query.updated_at || query.created_at),
+  };
+}
+
 function isNotFoundError(error) {
   return error?.status === 404 || /^404\b/.test(error?.message || "");
 }
@@ -173,7 +211,18 @@ export default function Intake() {
   useEffect(() => {
     let cancelled = false;
 
-    async function pruneDeletedSavedKits() {
+    async function refreshSavedKits() {
+      try {
+        const remoteQueries = await api.listQueries();
+        for (const query of [...remoteQueries].reverse()) {
+          const entry = savedEntryFromQuery(query);
+          if (entry.id) saveKit(entry);
+        }
+        if (!cancelled) setSavedKits(listSavedKits());
+      } catch (e) {
+        console.warn("[queries] list failed:", e.message);
+      }
+
       const entries = listSavedKits();
       if (entries.length === 0) return;
 
@@ -192,7 +241,7 @@ export default function Intake() {
       setSavedKits(listSavedKits());
     }
 
-    pruneDeletedSavedKits();
+    refreshSavedKits();
     return () => {
       cancelled = true;
     };
