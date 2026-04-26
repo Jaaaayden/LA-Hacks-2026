@@ -112,7 +112,7 @@ async def main() -> None:
     sample_listings = [
         Listing(
             platform_id="2000000001",
-            url="https://facebook.com/marketplace/item/2000000001/",
+            url="https://offerup.com/item/detail/2000000001/",
             title="K2 Standard Snowboard 152cm beginner",
             price_usd=120,
             hobby="snowboarding",
@@ -126,7 +126,7 @@ async def main() -> None:
         ),
         Listing(
             platform_id="2000000002",
-            url="https://facebook.com/marketplace/item/2000000002/",
+            url="https://offerup.com/item/detail/2000000002/",
             title="Burton Moto Snowboard Boots size 10",
             price_usd=45,
             hobby="snowboarding",

@@ -390,7 +390,7 @@ export function followupFor(hobby) {
 export const MOCK_CANDIDATES = {
   snowboard: [
     {
-      listing_id: "fb-1",
+      listing_id: "offerup-1",
       title: "Burton Custom 158",
       price_usd: 120,
       list_price_usd: 140,
@@ -403,7 +403,7 @@ export const MOCK_CANDIDATES = {
       is_top_match: true,
     },
     {
-      listing_id: "fb-2",
+      listing_id: "offerup-2",
       title: "Burton Ripcord 154",
       price_usd: 95,
       list_price_usd: 130,
@@ -415,7 +415,7 @@ export const MOCK_CANDIDATES = {
       is_top_match: false,
     },
     {
-      listing_id: "fb-3",
+      listing_id: "offerup-3",
       title: "Rossignol Sawblade 152",
       price_usd: 140,
       list_price_usd: 180,
@@ -427,7 +427,7 @@ export const MOCK_CANDIDATES = {
       is_top_match: false,
     },
     {
-      listing_id: "fb-4",
+      listing_id: "offerup-4",
       title: "K2 Standard 156",
       price_usd: 80,
       list_price_usd: 110,
@@ -439,7 +439,7 @@ export const MOCK_CANDIDATES = {
       is_top_match: false,
     },
     {
-      listing_id: "fb-5",
+      listing_id: "offerup-5",
       title: "GNU Riders Choice 159",
       price_usd: 160,
       list_price_usd: 220,

@@ -30,7 +30,7 @@ def _run(coro) -> None:
 def test_listing_schema_defaults() -> None:
     listing = Listing(
         platform_id="abc",
-        url="https://facebook.com/marketplace/item/abc/",
+        url="https://offerup.com/item/detail/abc/",
         title="Test board",
         price_usd=100.0,
         hobby="snowboarding",
@@ -41,7 +41,7 @@ def test_listing_schema_defaults() -> None:
     assert listing.condition is None
     assert listing.location == Location()
     assert listing.raw == {}
-    assert listing.source == "facebook_marketplace"
+    assert listing.source == "offerup"
     assert listing.shopping_list_id is None
 
 
@@ -110,7 +110,7 @@ def test_listing_round_trip() -> None:
         try:
             doc = Listing(
                 platform_id=platform_id,
-                url=f"https://facebook.com/marketplace/item/{platform_id}/",
+                url=f"https://offerup.com/item/detail/{platform_id}/",
                 title="Round-trip board",
                 price_usd=123.45,
                 hobby="snowboarding",
@@ -148,7 +148,7 @@ def test_unique_platform_id_index_rejects_duplicate() -> None:
     def make_doc() -> dict:
         return Listing(
             platform_id=platform_id,
-            url=f"https://facebook.com/marketplace/item/{platform_id}/",
+            url=f"https://offerup.com/item/detail/{platform_id}/",
             title="Dup test",
             price_usd=10.0,
             hobby="snowboarding",

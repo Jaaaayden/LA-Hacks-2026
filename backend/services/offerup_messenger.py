@@ -4,9 +4,8 @@ Uses a LOCAL Playwright browser with a persistent Chrome profile
 (scraper/.chrome-profile-offerup) — the same profile populated by
 `python scripts/offerup_login.py`.
 
-Unlike FB Marketplace, OfferUp does NOT have a "Verify your location" gate
-on messaging. The compose flow is simpler: navigate to listing → click
-"Ask" or "Make offer" → type message → send.
+The compose flow is: navigate to listing, click "Ask" or "Make offer",
+type message, then send.
 
 Usage:
     python -m backend.services.offerup_messenger \

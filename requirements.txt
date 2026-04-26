@@ -1,5 +1,4 @@
 anthropic
-browserbase
 certifi
 fastapi
 httpx
@@ -7,6 +6,5 @@ motor
 playwright
 pydantic
 python-dotenv
-stagehand
 uagents
 uvicorn

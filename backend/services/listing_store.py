@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from backend.kitscout.db import listings
 from backend.kitscout.schemas import Listing, Location
 
-_FB_ID_RE = re.compile(r"/marketplace/item/(\d+)")
 _OFFERUP_ID_RE = re.compile(r"/item/detail/(\d+)")
 
 _HOBBY_KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -26,23 +25,13 @@ _SNOWBOARDING_ITEMS: tuple[tuple[str, str], ...] = (
 
 
 def parse_platform_id(url: str) -> str | None:
-    """Extract a platform-specific ID from a listing URL.
-
-    Supports Facebook Marketplace and OfferUp URLs.
-    """
+    """Extract the numeric item ID from an OfferUp listing URL."""
     if not url:
         return None
-    m = _FB_ID_RE.search(url)
-    if m:
-        return m.group(1)
     m = _OFFERUP_ID_RE.search(url)
     if m:
         return m.group(1)
     return None
-
-
-# Backwards-compatible alias — existing code and tests import this name.
-parse_fb_id = parse_platform_id
 
 
 def parse_offerup_id(url: str) -> str | None:
@@ -57,7 +46,7 @@ def _detect_source(url: str) -> str:
     """Infer the listing source from its URL."""
     if "offerup.com" in url:
         return "offerup"
-    return "facebook_marketplace"
+    return "offerup"
 
 
 def parse_location(raw: str | None) -> Location:

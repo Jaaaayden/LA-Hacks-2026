@@ -1,8 +1,6 @@
 """OfferUp scraper — local Chrome via Playwright + Claude DOM-text extraction.
 
 Drives a persistent Chrome profile populated by `python scripts/offerup_login.py`.
-Mirrors the FB Marketplace scraper (backend/services/scraper.py) but targets
-offerup.com instead.
 
 OfferUp search URLs use `offerup.com/search?q=<query>`. Price filtering is
 done via the on-page filter UI (no URL param), so we interact with the filter

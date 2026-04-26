@@ -1,8 +1,7 @@
 """Shared local Chrome launch for OfferUp automation.
 
-Same approach as _browser.py (Facebook) — persistent Chrome profile at
-scraper/.chrome-profile-offerup, anti-automation stealth patches, and both
-launch + CDP-attach helpers.
+Uses a persistent Chrome profile at scraper/.chrome-profile-offerup,
+anti-automation stealth patches, and both launch + CDP-attach helpers.
 
 The profile is populated once by `python scripts/offerup_login.py` and reused
 by the scraper and messenger.

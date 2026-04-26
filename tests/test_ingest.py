@@ -10,21 +10,6 @@ from backend.services.listing_store import (
 from backend.kitscout.schemas import Listing, Location
 
 
-# ── parse_platform_id ────────────────────────────────────────
-def test_parse_platform_id_fb_happy() -> None:
-    assert (
-        parse_platform_id("https://www.facebook.com/marketplace/item/2226543014757869")
-        == "2226543014757869"
-    )
-
-
-def test_parse_platform_id_fb_with_trailing_slash_and_query() -> None:
-    assert (
-        parse_platform_id("https://www.facebook.com/marketplace/item/123/?ref=foo")
-        == "123"
-    )
-
-
 def test_parse_platform_id_offerup_happy() -> None:
     assert (
         parse_platform_id("https://offerup.com/item/detail/987654321")
@@ -125,8 +110,8 @@ def test_to_listing_happy() -> None:
         "title": "Burton Custom Snowboard 158cm",
         "price": 180,
         "location": "Los Angeles, CA",
-        "url": "https://www.facebook.com/marketplace/item/2226543014757869",
-        "imageUrl": "https://scontent.fbcdn.net/img.jpg",
+        "url": "https://offerup.com/item/detail/2226543014757869",
+        "imageUrl": "https://images.offerup.com/img.jpg",
     }
     listing = to_listing(
         raw,
@@ -136,13 +121,13 @@ def test_to_listing_happy() -> None:
     )
     assert isinstance(listing, Listing)
     assert listing.platform_id == "2226543014757869"
-    assert listing.source == "facebook_marketplace"
+    assert listing.source == "offerup"
     assert listing.price_usd == 180.0
     assert listing.hobby == "snowboarding"
     assert listing.item_type == "board"
     assert listing.location.city == "Los Angeles"
     assert listing.location.state == "CA"
-    assert str(listing.image_url) == "https://scontent.fbcdn.net/img.jpg"
+    assert str(listing.image_url) == "https://images.offerup.com/img.jpg"
     assert listing.raw == raw  # original payload preserved
 
 
@@ -167,13 +152,11 @@ def test_to_listing_offerup() -> None:
 
 
 def test_to_listing_drops_garbage_image_url() -> None:
-    # The JS scraper currently returns Stagehand sibling indices like "1-25"
-    # instead of real URLs. The ingester must drop those.
     raw = {
         "title": "Snowboard",
         "price": 30,
         "location": "Kennewick, WA",
-        "url": "https://www.facebook.com/marketplace/item/2226543014757869",
+        "url": "https://offerup.com/item/detail/2226543014757869",
         "imageUrl": "1-25",
     }
     listing = to_listing(
@@ -195,7 +178,7 @@ def test_to_listing_returns_none_on_unparseable_platform_id() -> None:
     raw = {
         "title": "x",
         "price": 1,
-        "url": "https://not-facebook.com/listing/abc",
+        "url": "https://example.com/listing/abc",
     }
     assert to_listing(raw, hobby="snowboarding", search_query="", scraped_at=_NOW) is None
 
@@ -206,7 +189,7 @@ def test_to_listing_zero_price_is_valid() -> None:
         "title": "Free snowboard",
         "price": 0,
         "location": "LA",
-        "url": "https://www.facebook.com/marketplace/item/999",
+        "url": "https://offerup.com/item/detail/999",
     }
     listing = to_listing(
         raw,
@@ -223,7 +206,7 @@ def test_to_listing_keeps_shopping_list_context() -> None:
         "title": "Burton Moto Snowboard Boots, size 10",
         "price": 45,
         "location": "Long Beach, CA",
-        "url": "https://www.facebook.com/marketplace/item/12345",
+        "url": "https://offerup.com/item/detail/12345",
     }
     listing = to_listing(
         raw,

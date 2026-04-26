@@ -62,7 +62,7 @@ class ShoppingList(BaseModel):
 
 class Listing(BaseModel):
     platform_id: str
-    source: Literal["facebook_marketplace", "offerup"] = "facebook_marketplace"
+    source: Literal["offerup"] = "offerup"
     url: str
     title: str
     description: str | None = None
