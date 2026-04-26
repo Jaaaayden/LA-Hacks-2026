@@ -21,6 +21,7 @@ from backend.services.bargain import (
     get_bargain_items,
     get_negotiation_poller_status,
     poll_bargain_messages,
+    start_ready_negotiations,
     start_negotiation_poller,
     stop_negotiation_poller,
 )
@@ -222,6 +223,10 @@ class BargainRequest(BaseModel):
     listing_ids: list[str] = Field(min_length=1)
 
 
+class StartNegotiationRequest(BaseModel):
+    listing_ids: list[str] | None = None
+
+
 @app.post("/shopping-lists/{shopping_list_id}/bargain", status_code=201)
 async def bargain_listings(
     shopping_list_id: str,
@@ -244,6 +249,22 @@ async def list_bargain_items(shopping_list_id: str) -> list[dict[str, Any]]:
 async def poll_selected_listing_messages(shopping_list_id: str) -> dict[str, Any]:
     try:
         return await poll_bargain_messages(shopping_list_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/shopping-lists/{shopping_list_id}/bargain-items/start-negotiation")
+async def start_selected_listing_negotiations(
+    shopping_list_id: str,
+    request: StartNegotiationRequest,
+) -> dict[str, Any]:
+    try:
+        return await start_ready_negotiations(
+            shopping_list_id,
+            listing_ids=request.listing_ids,
+        )
     except ValueError as exc:
         raise _http_error(exc) from exc
     except RuntimeError as exc:

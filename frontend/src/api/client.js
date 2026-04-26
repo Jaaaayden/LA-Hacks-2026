@@ -59,6 +59,11 @@ export const api = {
     request(`/shopping-lists/${shoppingListId}/bargain-items/poll-messages`, {
       method: "POST",
     }),
+  startBargainNegotiation: (shoppingListId, listingIds = null) =>
+    request(`/shopping-lists/${shoppingListId}/bargain-items/start-negotiation`, {
+      method: "POST",
+      body: { listing_ids: listingIds },
+    }),
   startNegotiationPoller: (shoppingListId) =>
     request(`/shopping-lists/${shoppingListId}/negotiation-poller/start`, {
       method: "POST",

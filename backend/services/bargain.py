@@ -143,6 +143,27 @@ def _field_satisfied(field: Any, satisfied_fields: list[str]) -> bool:
     return False
 
 
+def _conversation_for_negotiator(
+    conversation: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    turns: list[dict[str, str]] = []
+    for turn in conversation:
+        if not isinstance(turn, dict):
+            continue
+        content = str(turn.get("content") or "").strip()
+        if not content:
+            continue
+        role = str(turn.get("role") or "").strip().lower()
+        if role == "seller":
+            normalized_role = "seller"
+        elif role in {"buyer", "negotiator"}:
+            normalized_role = "negotiator"
+        else:
+            continue
+        turns.append({"role": normalized_role, "content": content})
+    return turns
+
+
 async def _prepare_offerup_chat(
     page: Page,
     listing_url: str,
@@ -442,6 +463,23 @@ async def _send_message_on_offerup(page: Page, listing_url: str, message: str) -
     return page.url
 
 
+async def _send_message_to_offerup_thread(
+    page: Page,
+    thread_url: str,
+    message: str,
+) -> None:
+    await page.goto(thread_url, wait_until="domcontentloaded", timeout=60_000)
+    with suppress(Exception):
+        await page.wait_for_load_state("networkidle", timeout=10_000)
+    await asyncio.sleep(1.5)
+    await _fill_and_send_chat_message(
+        page,
+        thread_url,
+        message,
+        debug_snapshot=False,
+    )
+
+
 async def _extract_chat_candidates(page: Page) -> list[dict[str, str]]:
     """Best-effort extraction of recent chat text blocks from the message panel."""
     raw = await page.evaluate(
@@ -610,6 +648,42 @@ def _message_thread_target(items_data: list[dict[str, Any]], out: queue.Queue) -
         out.put(("fatal", exc))
     finally:
         out.put(("done", None))
+
+
+async def _send_negotiation_messages_in_browser(
+    messages_data: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    from backend.services._browser_offerup import launch_logged_in_chrome
+
+    if not messages_data:
+        return []
+
+    results: list[dict[str, Any]] = []
+    async with async_playwright() as p:
+        context = await launch_logged_in_chrome(p)
+        try:
+            page = context.pages[0] if context.pages else await context.new_page()
+            for row in messages_data:
+                try:
+                    await _send_message_to_offerup_thread(
+                        page,
+                        str(row["thread_url"]),
+                        str(row["message"]),
+                    )
+                    results.append({**row, "sent": True, "error": None})
+                except Exception as exc:
+                    results.append({**row, "sent": False, "error": str(exc)})
+        finally:
+            await context.close()
+    return results
+
+
+def _send_negotiation_messages_thread_target(
+    messages_data: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    return asyncio.run(_send_negotiation_messages_in_browser(messages_data))
 
 
 async def _run_messaging(items_data: list[dict[str, Any]]) -> None:
@@ -1050,6 +1124,176 @@ async def add_to_bargain(
 async def get_bargain_items(shopping_list_id: str) -> list[dict[str, Any]]:
     cursor = bargain_items.find({"shopping_list_id": shopping_list_id}).sort("added_at", 1)
     return [_serialize(doc) async for doc in cursor]
+
+
+async def start_ready_negotiations(
+    shopping_list_id: str,
+    listing_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Start negotiation only for items whose seller details are gathered."""
+    shopping_list = await shopping_lists.find_one({"_id": _object_id(shopping_list_id)})
+    if shopping_list is None:
+        raise ValueError(f"Shopping list not found: {shopping_list_id}")
+
+    query: dict[str, Any] = {
+        "shopping_list_id": shopping_list_id,
+        "status": "ready_to_negotiate",
+    }
+    if listing_ids:
+        query["listing_id"] = {"$in": [str(listing_id) for listing_id in listing_ids]}
+
+    docs = await bargain_items.find(query).to_list(None)
+    started: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    if not docs:
+        return {
+            "shopping_list_id": shopping_list_id,
+            "started_count": 0,
+            "skipped_count": 0,
+            "started": [],
+            "skipped": [],
+            "poller_running": bool(
+                _NEGOTIATION_POLL_TASKS.get(shopping_list_id)
+                and not _NEGOTIATION_POLL_TASKS[shopping_list_id].done()
+            ),
+        }
+
+    messages_data: list[dict[str, Any]] = []
+    loop = asyncio.get_running_loop()
+    for doc in docs:
+        listing_id = str(doc.get("listing_id") or "")
+        thread_url = str(doc.get("thread_url") or "")
+        if not listing_id:
+            continue
+        if not thread_url:
+            skipped.append(
+                {
+                    "listing_id": listing_id,
+                    "reason": "missing_thread_url",
+                }
+            )
+            continue
+
+        asking_price = float(doc.get("price_usd") or 0)
+        target_price = _effective_target_price(
+            asking_price,
+            float(doc.get("target_price_usd") or 0),
+        )
+        conversation = _conversation_for_negotiator(list(doc.get("conversation") or []))
+        result = await loop.run_in_executor(
+            None,
+            gen_negotiation_message,
+            str(doc.get("title") or ""),
+            asking_price,
+            target_price,
+            conversation,
+        )
+        action = result.get("action", "give_up")
+        message = result.get("message") or ""
+        if action == "give_up" or not message:
+            await bargain_items.update_one(
+                {
+                    "shopping_list_id": shopping_list_id,
+                    "listing_id": listing_id,
+                },
+                {"$set": {"status": "gave_up", "updated_at": _now()}},
+            )
+            skipped.append(
+                {
+                    "listing_id": listing_id,
+                    "reason": "negotiator_gave_up",
+                }
+            )
+            continue
+
+        messages_data.append(
+            {
+                "listing_id": listing_id,
+                "thread_url": thread_url,
+                "message": message,
+                "status": "agreed" if action == "accept" else "negotiating",
+            }
+        )
+
+    if messages_data:
+        async with _OFFERUP_BROWSER_LOCK:
+            send_results = await asyncio.to_thread(
+                _send_negotiation_messages_thread_target,
+                messages_data,
+            )
+        for row in send_results:
+            listing_id = str(row.get("listing_id") or "")
+            if not row.get("sent"):
+                await bargain_items.update_one(
+                    {
+                        "shopping_list_id": shopping_list_id,
+                        "listing_id": listing_id,
+                    },
+                    {
+                        "$set": {
+                            "status": "error",
+                            "error": row.get("error") or "Failed to send negotiation message.",
+                            "updated_at": _now(),
+                        }
+                    },
+                )
+                skipped.append(
+                    {
+                        "listing_id": listing_id,
+                        "reason": "send_failed",
+                        "error": row.get("error"),
+                    }
+                )
+                continue
+
+            next_status = str(row.get("status") or "negotiating")
+            message = str(row.get("message") or "")
+            thread_url = str(row.get("thread_url") or "")
+            await bargain_items.update_one(
+                {
+                    "shopping_list_id": shopping_list_id,
+                    "listing_id": listing_id,
+                },
+                {
+                    "$set": {
+                        "status": next_status,
+                        "last_message": message,
+                        "updated_at": _now(),
+                    },
+                    "$push": {
+                        "conversation": {
+                            "role": "negotiator",
+                            "content": message,
+                        }
+                    },
+                },
+            )
+            started.append(
+                {
+                    "listing_id": listing_id,
+                    "thread_url": thread_url,
+                    "status": next_status,
+                    "message": message,
+                }
+            )
+
+    poller_started = False
+    if any(row.get("status") == "negotiating" for row in started):
+        poller_started = _ensure_negotiation_poller(shopping_list_id)
+
+    return {
+        "shopping_list_id": shopping_list_id,
+        "started_count": len(started),
+        "skipped_count": len(skipped),
+        "started": started,
+        "skipped": skipped,
+        "poller_started": poller_started,
+        "poller_running": bool(
+            _NEGOTIATION_POLL_TASKS.get(shopping_list_id)
+            and not _NEGOTIATION_POLL_TASKS[shopping_list_id].done()
+        ),
+    }
 
 
 async def poll_bargain_messages(shopping_list_id: str) -> dict[str, Any]:
