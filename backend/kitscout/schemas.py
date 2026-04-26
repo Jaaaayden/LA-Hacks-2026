@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -12,8 +12,52 @@ class Location(BaseModel):
     raw: str | None = None
 
 
+class Query(BaseModel):
+    raw_messages: list[str]
+    parsed_intent: dict[str, Any]
+    status: Literal[
+        "needs_followup",
+        "ready_for_list",
+        "shopping_list_created",
+        "failed",
+    ]
+    created_at: datetime
+    updated_at: datetime
+    followup_questions: list[str] = Field(default_factory=list)
+    shopping_list_id: str | None = None
+    error: str | None = None
+
+
+class ShoppingListValue(BaseModel):
+    value: str
+    justification: str
+
+
+class ShoppingListAttribute(BaseModel):
+    key: str
+    value: list[ShoppingListValue]
+
+
+class ShoppingListItem(BaseModel):
+    item_type: str
+    search_query: str
+    required: bool
+    attributes: list[ShoppingListAttribute] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class ShoppingList(BaseModel):
+    query_id: str
+    hobby: str
+    budget_usd: float | None = None
+    items: list[ShoppingListItem]
+    created_at: datetime
+    source_model: str
+
+
 class Listing(BaseModel):
     fb_id: str
+    source: Literal["facebook_marketplace"] = "facebook_marketplace"
     url: str
     title: str
     description: str | None = None
@@ -24,39 +68,16 @@ class Listing(BaseModel):
     hobby: str
     item_type: str
     condition: Literal["new", "like_new", "good", "fair", "poor"] | None = None
-    skill_level_fit: Literal["beginner", "intermediate", "advanced"] | None = None
     size: str | None = None
+
+    query_id: str | None = None
+    shopping_list_id: str | None = None
+    shopping_list_item_type: str | None = None
+    search_query: str | None = None
 
     location: Location = Field(default_factory=Location)
     image_url: str | None = None
 
     posted_at: datetime | None = None
     scraped_at: datetime
-    raw: dict = Field(default_factory=dict)
-
-
-class ItemComp(BaseModel):
-    hobby: str
-    item_type: str
-    model: str | None = None
-    median_price_usd: float
-    p25_usd: float | None = None
-    p75_usd: float | None = None
-    samples: int
-    updated_at: datetime
-
-
-class Query(BaseModel):
-    raw_query: str
-    parsed_intent: dict
-    parsed_at: datetime
-    offer_id: str | None = None
-
-
-class Offer(BaseModel):
-    query_text: str
-    parsed_intent: dict
-    listing_ids: list[str]
-    total_price_usd: float
-    rationale: str | None = None
-    created_at: datetime
+    raw: dict[str, Any] = Field(default_factory=dict)

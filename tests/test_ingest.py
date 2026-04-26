@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
 
-from backend.services.ingest import (
+from backend.services.listing_store import (
     classify_item_type,
     infer_hobby,
     parse_fb_id,
     parse_location,
     to_listing,
 )
-from kitscout.schemas import Listing, Location
+from backend.kitscout.schemas import Listing, Location
 
 
 # ── parse_fb_id ──────────────────────────────────────────────
@@ -114,7 +114,12 @@ def test_to_listing_happy() -> None:
         "url": "https://www.facebook.com/marketplace/item/2226543014757869",
         "imageUrl": "https://scontent.fbcdn.net/img.jpg",
     }
-    listing = to_listing(raw, hobby="snowboarding", query="snowboard", scraped_at=_NOW)
+    listing = to_listing(
+        raw,
+        hobby="snowboarding",
+        search_query="snowboard",
+        scraped_at=_NOW,
+    )
     assert isinstance(listing, Listing)
     assert listing.fb_id == "2226543014757869"
     assert listing.price_usd == 180.0
@@ -136,14 +141,19 @@ def test_to_listing_drops_garbage_image_url() -> None:
         "url": "https://www.facebook.com/marketplace/item/2226543014757869",
         "imageUrl": "1-25",
     }
-    listing = to_listing(raw, hobby="snowboarding", query="snowboard", scraped_at=_NOW)
+    listing = to_listing(
+        raw,
+        hobby="snowboarding",
+        search_query="snowboard",
+        scraped_at=_NOW,
+    )
     assert listing is not None
     assert listing.image_url is None
 
 
 def test_to_listing_returns_none_on_missing_url() -> None:
     raw = {"title": "no url here", "price": 10}
-    assert to_listing(raw, hobby="snowboarding", query="", scraped_at=_NOW) is None
+    assert to_listing(raw, hobby="snowboarding", search_query="", scraped_at=_NOW) is None
 
 
 def test_to_listing_returns_none_on_unparseable_fb_id() -> None:
@@ -152,7 +162,7 @@ def test_to_listing_returns_none_on_unparseable_fb_id() -> None:
         "price": 1,
         "url": "https://not-facebook.com/listing/abc",
     }
-    assert to_listing(raw, hobby="snowboarding", query="", scraped_at=_NOW) is None
+    assert to_listing(raw, hobby="snowboarding", search_query="", scraped_at=_NOW) is None
 
 
 def test_to_listing_zero_price_is_valid() -> None:
@@ -163,6 +173,34 @@ def test_to_listing_zero_price_is_valid() -> None:
         "location": "LA",
         "url": "https://www.facebook.com/marketplace/item/999",
     }
-    listing = to_listing(raw, hobby="snowboarding", query="snowboard", scraped_at=_NOW)
+    listing = to_listing(
+        raw,
+        hobby="snowboarding",
+        search_query="snowboard",
+        scraped_at=_NOW,
+    )
     assert listing is not None
     assert listing.price_usd == 0.0
+
+
+def test_to_listing_keeps_shopping_list_context() -> None:
+    raw = {
+        "title": "Burton Moto Snowboard Boots, size 10",
+        "price": 45,
+        "location": "Long Beach, CA",
+        "url": "https://www.facebook.com/marketplace/item/12345",
+    }
+    listing = to_listing(
+        raw,
+        hobby="snowboarding",
+        search_query="size 10 snowboard boots",
+        shopping_list_item_type="boots",
+        query_id="query-1",
+        shopping_list_id="list-1",
+        scraped_at=_NOW,
+    )
+    assert listing is not None
+    assert listing.item_type == "boots"
+    assert listing.query_id == "query-1"
+    assert listing.shopping_list_id == "list-1"
+    assert listing.search_query == "size 10 snowboard boots"

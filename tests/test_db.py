@@ -7,7 +7,15 @@ import pytest
 from dotenv import load_dotenv
 from pymongo.errors import DuplicateKeyError
 
-from kitscout.schemas import ItemComp, Listing, Location, Offer, Query
+from backend.kitscout.schemas import (
+    Listing,
+    Location,
+    Query,
+    ShoppingList,
+    ShoppingListAttribute,
+    ShoppingListItem,
+    ShoppingListValue,
+)
 
 load_dotenv()
 
@@ -31,31 +39,55 @@ def test_listing_schema_defaults() -> None:
     )
     assert listing.currency == "USD"
     assert listing.condition is None
-    assert listing.skill_level_fit is None
     assert listing.location == Location()
     assert listing.raw == {}
+    assert listing.source == "facebook_marketplace"
+    assert listing.shopping_list_id is None
 
 
 def test_query_schema() -> None:
+    now = datetime.now(timezone.utc)
     q = Query(
-        raw_query="i want to snowboard",
+        raw_messages=["i want to snowboard"],
         parsed_intent={"hobby": "snowboarding", "budget_usd": None},
-        parsed_at=datetime.now(timezone.utc),
+        followup_questions=["What is your budget?"],
+        status="needs_followup",
+        created_at=now,
+        updated_at=now,
     )
-    assert q.offer_id is None
+    assert q.shopping_list_id is None
     assert q.parsed_intent["hobby"] == "snowboarding"
+    assert q.raw_messages == ["i want to snowboard"]
 
 
-def test_offer_schema() -> None:
-    offer = Offer(
-        query_text="x",
-        parsed_intent={},
-        listing_ids=["6543210fedcba9876"],
-        total_price_usd=275.0,
+def test_shopping_list_schema() -> None:
+    shopping_list = ShoppingList(
+        query_id="query-123",
+        hobby="snowboarding",
+        budget_usd=300.0,
+        items=[
+            ShoppingListItem(
+                item_type="boots",
+                search_query="size 10 snowboard boots",
+                required=True,
+                attributes=[
+                    ShoppingListAttribute(
+                        key="size",
+                        value=[
+                            ShoppingListValue(
+                                value="10 US",
+                                justification="User provided boot size.",
+                            )
+                        ],
+                    )
+                ],
+                notes=None,
+            )
+        ],
+        source_model="claude-sonnet-4-5",
         created_at=datetime.now(timezone.utc),
     )
-    assert offer.rationale is None
-    assert len(offer.listing_ids) == 1
+    assert shopping_list.items[0].attributes[0].value[0].value == "10 US"
 
 
 pytestmark_mongo = pytest.mark.skipif(
@@ -67,10 +99,11 @@ pytestmark_mongo = pytest.mark.skipif(
 @pytestmark_mongo
 @pytest.mark.mongo
 def test_listing_round_trip() -> None:
-    from kitscout.db import listings
-    from kitscout.indexes import ensure_indexes
+    from backend.kitscout.db import listings
+    from backend.kitscout.indexes import ensure_indexes
 
     fb_id = f"test-{uuid.uuid4()}"
+    query_id = f"query-{uuid.uuid4()}"
 
     async def run() -> None:
         await ensure_indexes()
@@ -83,6 +116,8 @@ def test_listing_round_trip() -> None:
                 hobby="snowboarding",
                 item_type="board",
                 condition="good",
+                query_id=query_id,
+                search_query="beginner snowboard",
                 location=Location(city="Los Angeles", state="CA"),
                 scraped_at=datetime.now(timezone.utc),
             ).model_dump()
@@ -95,6 +130,7 @@ def test_listing_round_trip() -> None:
             assert found["price_usd"] == 123.45
             assert found["location"]["city"] == "Los Angeles"
             assert found["currency"] == "USD"
+            assert found["query_id"] == query_id
         finally:
             await listings.delete_many({"fb_id": fb_id})
 
@@ -104,8 +140,8 @@ def test_listing_round_trip() -> None:
 @pytestmark_mongo
 @pytest.mark.mongo
 def test_unique_fb_id_index_rejects_duplicate() -> None:
-    from kitscout.db import listings
-    from kitscout.indexes import ensure_indexes
+    from backend.kitscout.db import listings
+    from backend.kitscout.indexes import ensure_indexes
 
     fb_id = f"test-{uuid.uuid4()}"
 
@@ -134,29 +170,37 @@ def test_unique_fb_id_index_rejects_duplicate() -> None:
 
 @pytestmark_mongo
 @pytest.mark.mongo
-def test_item_comp_round_trip() -> None:
-    from kitscout.db import item_comps
+def test_shopping_list_round_trip() -> None:
+    from backend.kitscout.db import shopping_lists
 
-    model_name = f"test-comp-{uuid.uuid4()}"
+    query_id = f"test-query-{uuid.uuid4()}"
 
     async def run() -> None:
         try:
-            doc = ItemComp(
+            doc = ShoppingList(
+                query_id=query_id,
                 hobby="snowboarding",
-                item_type="board",
-                model=model_name,
-                median_price_usd=200.0,
-                samples=5,
-                updated_at=datetime.now(timezone.utc),
+                budget_usd=250.0,
+                items=[
+                    ShoppingListItem(
+                        item_type="helmet",
+                        search_query="snowboard helmet",
+                        required=True,
+                        attributes=[],
+                        notes=None,
+                    )
+                ],
+                source_model="test-model",
+                created_at=datetime.now(timezone.utc),
             ).model_dump()
 
-            await item_comps.insert_one(doc)
-            found = await item_comps.find_one({"model": model_name})
+            await shopping_lists.insert_one(doc)
+            found = await shopping_lists.find_one({"query_id": query_id})
 
             assert found is not None
-            assert found["median_price_usd"] == 200.0
-            assert found["samples"] == 5
+            assert found["hobby"] == "snowboarding"
+            assert found["items"][0]["item_type"] == "helmet"
         finally:
-            await item_comps.delete_many({"model": model_name})
+            await shopping_lists.delete_many({"query_id": query_id})
 
     _run(run())
