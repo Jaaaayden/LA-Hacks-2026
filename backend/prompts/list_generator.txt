@@ -17,22 +17,22 @@ Use attributes for concrete product specs that determine which specific type of 
 item to buy. Attributes must be exact enough that a person reading the list can pick
 the right listing without guessing. Prefer fields like species, size, dimensions,
 compatibility, capacity, handedness, material, terrain, style, mount, or season_rating.
-Use short snake_case keys. The value must always be a list of acceptable values, even
-when there is only one value. Each attribute must include its own justification.
+Use short snake_case keys. The value must always be a list of acceptable value objects,
+even when there is only one value. Each value object must include its own justification.
 
 Do not put user descriptors in attributes. Skill level, budget, location, and climate
 can influence which product specs you choose, but the attribute itself should be a
 product/listing spec. For example, if beginner bonsai implies forgiving species,
-attributes should include {"key": "species", "value": ["juniper", "ficus"], "justification": "..."},
-not {"key": "skill_level_fit", "value": ["beginner"], "justification": "..."}.
+attributes should include {"key": "species", "value": [{"value": "juniper", "justification": "..."}, {"value": "ficus", "justification": "..."}]},
+not {"key": "skill_level_fit", "value": [{"value": "beginner", "justification": "..."}]}.
 
 Examples:
-- snowboard attributes: [{"key": "size", "value": ["155 cm"], "justification": "Board length came from the user's follow-up answer."}, {"key": "style", "value": ["all-mountain"], "justification": "Riding style came from the user's follow-up answer."}]
-- boots attributes: [{"key": "size", "value": ["10 US"], "justification": "Boot size came from the user's follow-up answer."}]
-- bindings attributes: [{"key": "compatible_boot_size", "value": ["10 US"], "justification": "Bindings must fit the user's boots."}, {"key": "style", "value": ["all-mountain"], "justification": "Bindings should match the riding style."}]
-- camera lens attributes: [{"key": "mount", "value": ["Sony E"], "justification": "Lens mount must match the user's camera body."}, {"key": "focal_length", "value": ["35mm"], "justification": "Focal length was requested or inferred from the use case."}]
-- tent attributes: [{"key": "capacity", "value": ["2 person"], "justification": "Capacity came from the user's group size."}, {"key": "season_rating", "value": ["3-season"], "justification": "Season rating matches typical camping conditions."}]
-- bonsai tree attributes: [{"key": "species", "value": ["juniper", "ficus"], "justification": "Beginner level implies forgiving bonsai species."}, {"key": "indoor_outdoor", "value": ["indoor"], "justification": "Indoor preference came from the follow-up response."}]
+- snowboard attributes: [{"key": "size", "value": [{"value": "155 cm", "justification": "Board length came from the user's follow-up answer."}]}, {"key": "style", "value": [{"value": "all-mountain", "justification": "Riding style came from the user's follow-up answer."}]}]
+- boots attributes: [{"key": "size", "value": [{"value": "10 US", "justification": "Boot size came from the user's follow-up answer."}]}]
+- bindings attributes: [{"key": "compatible_boot_size", "value": [{"value": "10 US", "justification": "Bindings must fit the user's boots."}]}, {"key": "style", "value": [{"value": "all-mountain", "justification": "Bindings should match the riding style."}]}]
+- camera lens attributes: [{"key": "mount", "value": [{"value": "Sony E", "justification": "Lens mount must match the user's camera body."}]}, {"key": "focal_length", "value": [{"value": "35mm", "justification": "Focal length was requested or inferred from the use case."}]}]
+- tent attributes: [{"key": "capacity", "value": [{"value": "2 person", "justification": "Capacity came from the user's group size."}]}, {"key": "season_rating", "value": [{"value": "3-season", "justification": "Season rating matches typical camping conditions."}]}]
+- bonsai tree attributes: [{"key": "species", "value": [{"value": "juniper", "justification": "Junipers are common, hardy beginner bonsai."}, {"value": "ficus", "justification": "Ficus is forgiving and works well indoors."}]}, {"key": "indoor_outdoor", "value": [{"value": "indoor", "justification": "Indoor preference came from the follow-up response."}]}]
 
 Use the input JSON aggressively:
 - Put answered follow-up details from `other` on the item they constrain as direct attributes.
@@ -46,8 +46,8 @@ Use the input JSON aggressively:
   attributes rather than making up a value.
 - The search_query should reflect the strongest attributes in natural search form.
   For example: "155 cm beginner all-mountain snowboard" or "size 10 snowboard boots".
-- Each attribute justification should briefly connect that attribute's values back to
-  the user's provided answers or safe inferences. Do not repeat generic advice.
+- Each value justification should briefly connect that exact value back to the user's
+  provided answers or safe inferences. Do not repeat generic advice.
 
 Do not use attributes for vague preferences like "needs bindings included" unless
 they become a real compatibility attribute on that item. For example, bindings

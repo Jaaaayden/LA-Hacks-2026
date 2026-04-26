@@ -50,21 +50,30 @@ _SHOPPING_LIST_TOOL = {
                                         "type": "array",
                                         "description": (
                                             "One or more acceptable product spec values "
-                                            "to match in listings."
+                                            "to match in listings, each with its own "
+                                            "justification."
                                         ),
                                         "items": {
-                                            "type": "string",
+                                            "type": "object",
+                                            "properties": {
+                                                "value": {
+                                                    "type": "string",
+                                                    "description": "Product spec value to match.",
+                                                },
+                                                "justification": {
+                                                    "type": "string",
+                                                    "description": (
+                                                        "Brief reason why this specific "
+                                                        "value was chosen."
+                                                    ),
+                                                },
+                                            },
+                                            "required": ["value", "justification"],
+                                            "additionalProperties": False,
                                         },
                                     },
-                                    "justification": {
-                                        "type": "string",
-                                        "description": (
-                                            "Brief reason why this attribute and its "
-                                            "values were chosen from the user's intent."
-                                        ),
-                                    },
                                 },
-                                "required": ["key", "value", "justification"],
+                                "required": ["key", "value"],
                                 "additionalProperties": False,
                             },
                         },
