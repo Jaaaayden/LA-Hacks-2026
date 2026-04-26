@@ -90,6 +90,8 @@ def to_listing(
     if img and not str(img).startswith("http"):
         img = None
 
+    img_path = scraped.get("image_path") or scraped.get("imagePath")
+
     try:
         return Listing(
             fb_id=fb_id,
@@ -100,6 +102,7 @@ def to_listing(
             item_type=classify_item_type(scraped.get("title", ""), query, hobby),
             location=parse_location(scraped.get("location")),
             image_url=img,
+            image_path=img_path,
             scraped_at=scraped_at,
             raw=scraped,
         )

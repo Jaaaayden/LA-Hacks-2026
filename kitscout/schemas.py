@@ -29,6 +29,7 @@ class Listing(BaseModel):
 
     location: Location = Field(default_factory=Location)
     image_url: str | None = None
+    image_path: str | None = None
 
     posted_at: datetime | None = None
     scraped_at: datetime
