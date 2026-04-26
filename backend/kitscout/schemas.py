@@ -89,3 +89,16 @@ class Listing(BaseModel):
     posted_at: datetime | None = None
     scraped_at: datetime
     raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class SearchJob(BaseModel):
+    shopping_list_id: str
+    status: Literal["pending", "searching", "done", "error"]
+    current_item_id: str | None = None
+    current_item_type: str | None = None
+    items_done: int = 0
+    items_total: int = 0
+    started_at: datetime
+    finished_at: datetime | None = None
+    error: str | None = None
+    counts: dict[str, int] = Field(default_factory=dict)
