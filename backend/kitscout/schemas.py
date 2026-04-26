@@ -118,6 +118,10 @@ class ListingSearchJob(BaseModel):
     started_at: datetime
     finished_at: datetime | None = None
     error: str | None = None
+    retry_count: int = 0
+    max_retries: int = 3
+    retry_after_seconds: int | None = None
+    next_retry_at: datetime | None = None
     counts: dict[str, int] = Field(default_factory=dict)
 
 

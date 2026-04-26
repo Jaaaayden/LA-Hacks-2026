@@ -9,6 +9,7 @@ import asyncio
 import math
 from collections import defaultdict
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from bson import ObjectId
@@ -28,12 +29,70 @@ from backend.services.offerup_scraper import search_offerup
 
 DEFAULT_RESULTS_PER_ITEM = 30
 DEFAULT_SEARCH_LOCATION = "Los Angeles, CA"
+DEFAULT_RATE_LIMIT_RETRY_DELAY_SECONDS = 90
+MAX_RATE_LIMIT_RETRY_DELAY_SECONDS = 600
+MAX_RATE_LIMIT_RETRIES = 3
 
 _active_lock = asyncio.Lock()
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _http_status_code(exc: Exception) -> int | None:
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    return int(status_code) if isinstance(status_code, int) else None
+
+
+def _retry_after_seconds(exc: Exception, retry_count: int) -> int:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", {}) or {}
+    retry_after = headers.get("Retry-After") if hasattr(headers, "get") else None
+
+    if retry_after:
+        try:
+            seconds = int(float(retry_after))
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                seconds = int((retry_at - _now()).total_seconds())
+            except (TypeError, ValueError):
+                seconds = DEFAULT_RATE_LIMIT_RETRY_DELAY_SECONDS
+        return max(1, min(seconds, MAX_RATE_LIMIT_RETRY_DELAY_SECONDS))
+
+    backoff = DEFAULT_RATE_LIMIT_RETRY_DELAY_SECONDS * (2 ** max(0, retry_count - 1))
+    return min(backoff, MAX_RATE_LIMIT_RETRY_DELAY_SECONDS)
+
+
+def _should_requeue_search(exc: Exception) -> bool:
+    return _http_status_code(exc) == 429
+
+
+async def _run_search_job_after_delay(
+    shopping_list_id: str,
+    *,
+    max_results_per_item: int,
+    delay_seconds: int,
+    retry_count: int,
+) -> None:
+    await asyncio.sleep(delay_seconds)
+
+    job = await listing_search_jobs.find_one({"shopping_list_id": shopping_list_id})
+    if (
+        job is None
+        or job.get("status") != "pending"
+        or int(job.get("retry_count") or 0) != retry_count
+    ):
+        return
+
+    await _run_search_job(
+        shopping_list_id,
+        max_results_per_item=max_results_per_item,
+    )
 
 
 def _object_id(value: str) -> ObjectId:
@@ -346,6 +405,9 @@ async def _run_search_job(
                     "$set": {
                         "status": "searching",
                         "items_total": len(items),
+                        "error": None,
+                        "next_retry_at": None,
+                        "retry_after_seconds": None,
                     }
                 },
             )
@@ -411,11 +473,50 @@ async def _run_search_job(
                         "finished_at": _now(),
                         "current_item_id": None,
                         "current_item_type": None,
+                        "error": None,
+                        "next_retry_at": None,
+                        "retry_after_seconds": None,
                         "counts": dict(totals),
                     }
                 },
             )
         except Exception as exc:
+            job = await listing_search_jobs.find_one({"shopping_list_id": shopping_list_id})
+            retry_count = int(job.get("retry_count") or 0) if job else 0
+            if _should_requeue_search(exc) and retry_count < MAX_RATE_LIMIT_RETRIES:
+                next_retry_count = retry_count + 1
+                delay_seconds = _retry_after_seconds(exc, next_retry_count)
+                retry_at = datetime.fromtimestamp(
+                    _now().timestamp() + delay_seconds,
+                    tz=timezone.utc,
+                )
+                await listing_search_jobs.update_one(
+                    {"shopping_list_id": shopping_list_id},
+                    {
+                        "$set": {
+                            "status": "pending",
+                            "error": str(exc),
+                            "finished_at": None,
+                            "current_item_id": None,
+                            "current_item_type": None,
+                            "retry_count": next_retry_count,
+                            "max_retries": MAX_RATE_LIMIT_RETRIES,
+                            "retry_after_seconds": delay_seconds,
+                            "next_retry_at": retry_at,
+                            "counts": dict(totals),
+                        }
+                    },
+                )
+                asyncio.create_task(
+                    _run_search_job_after_delay(
+                        shopping_list_id,
+                        max_results_per_item=max_results_per_item,
+                        delay_seconds=delay_seconds,
+                        retry_count=next_retry_count,
+                    )
+                )
+                return
+
             await listing_search_jobs.update_one(
                 {"shopping_list_id": shopping_list_id},
                 {
@@ -423,6 +524,8 @@ async def _run_search_job(
                         "status": "error",
                         "error": str(exc),
                         "finished_at": _now(),
+                        "next_retry_at": None,
+                        "retry_after_seconds": None,
                         "counts": dict(totals),
                     }
                 },
