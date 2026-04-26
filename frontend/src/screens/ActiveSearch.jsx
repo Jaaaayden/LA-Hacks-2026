@@ -168,13 +168,13 @@ export default function ActiveSearch() {
             </div>
           </div>
           <div className={styles.activityList}>
-            {activity.map((a, i) => (
+            {activity.filter(Boolean).map((a, i, arr) => (
               <div key={i}>
                 <div className={styles.activityItem}>
                   <span className={styles.activityTime}>{a.time_label}</span>
                   <span>{a.text}</span>
                 </div>
-                {i < activity.length - 1 && (
+                {i < arr.length - 1 && (
                   <div className={styles.activityRule} style={{ marginTop: 12 }} />
                 )}
               </div>

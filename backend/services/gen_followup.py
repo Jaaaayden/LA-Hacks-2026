@@ -97,27 +97,46 @@ def _unanswered_flags(intent) -> list[dict]:
     return flags
 
 
-def _question_tokens(question: str) -> set[str]:
+# Common English stop words that drag the Jaccard overlap toward zero on
+# legitimate paraphrases. Strip them before comparing question tokens.
+_STOP_WORDS = frozenset({
+    "the", "a", "an", "and", "or", "but", "if", "then", "than", "so",
+    "is", "are", "was", "were", "be", "been", "being", "do", "does", "did",
+    "have", "has", "had", "having", "can", "could", "should", "would", "may",
+    "might", "must", "will", "shall", "to", "of", "in", "on", "at", "for",
+    "with", "by", "from", "about", "into", "over", "under", "as", "this",
+    "that", "these", "those", "it", "its", "your", "you", "you're", "youre",
+    "i", "me", "my", "we", "our", "they", "them", "their", "what", "whats",
+    "what's", "which", "who", "whom", "where", "when", "why", "how", "any",
+    "some", "all", "no", "not", "yes", "much", "many", "more", "most", "few",
+    "here", "there", "just", "like", "want", "need", "going", "go", "get",
+    "make", "made", "use", "used", "tell", "say", "let", "know",
+})
+
+
+def _content_tokens(text: str) -> set[str]:
     return {
         token
-        for token in re.findall(r"[a-z0-9]+", question.lower())
-        if len(token) > 2
+        for token in re.findall(r"[a-z0-9]+", (text or "").lower())
+        if len(token) > 2 and token not in _STOP_WORDS
     }
 
 
 def _is_repeat_question(question: str, previous_questions: list[str]) -> bool:
-    tokens = _question_tokens(question)
+    tokens = _content_tokens(question)
     if not tokens:
         return False
-    normalized = " ".join(sorted(tokens))
     for previous in previous_questions:
-        previous_tokens = _question_tokens(previous)
+        previous_tokens = _content_tokens(previous)
         if not previous_tokens:
             continue
-        if normalized == " ".join(sorted(previous_tokens)):
+        # Subset match — every meaningful word in the new question already
+        # appeared in a prior one (or vice versa). Catches "skill level?" /
+        # "your skill level" reworded variants.
+        if tokens.issubset(previous_tokens) or previous_tokens.issubset(tokens):
             return True
         overlap = len(tokens & previous_tokens) / len(tokens | previous_tokens)
-        if overlap >= 0.72:
+        if overlap >= 0.5:
             return True
     return False
 
@@ -154,9 +173,11 @@ def followup_questions_from_intent(
     other_flags=None,
     model="claude-sonnet-4-5",
     previous_questions=None,
+    prior_user_messages=None,
 ):
     flags = list(other_flags) if other_flags else []
     asked = list(previous_questions) if previous_questions else []
+    transcript = [m for m in (prior_user_messages or []) if m]
 
     load_dotenv()
     key = os.environ.get("ANTHROPIC_API_KEY")
@@ -169,8 +190,13 @@ def followup_questions_from_intent(
     if flags:
         user_body += "\n\nHobby-specific flags (one follow-up question each):\n"
         user_body += json.dumps(flags, indent=2)
+    if transcript:
+        # Give the model the actual user replies so it can see which topics
+        # have already been addressed (even vaguely).
+        user_body += "\n\nConversation so far (every user message in order):\n"
+        user_body += "\n\n---\n\n".join(transcript)
     if asked:
-        user_body += "\n\nQuestions already asked; do not repeat these:\n"
+        user_body += "\n\nQuestions already asked; do not repeat these or any rephrased version:\n"
         user_body += json.dumps(asked, indent=2)
     client = Anthropic(api_key=key)
     msg = client.messages.create(
@@ -237,12 +263,17 @@ def suggest_other_flags_for_hobby(hobby, raw_query="", model="claude-sonnet-4-5"
     raise ValueError("Claude did not return other_flags tool output.")
 
 
+def _dbg(label, payload):
+    print(f"[gen_followup] {label}: {payload}", file=sys.stderr, flush=True)
+
+
 def gen_followup(
     intent,
     include_hobby_other_flags=False,
     model="claude-sonnet-4-5",
     merged_intent_out=None,
     previous_questions=None,
+    prior_user_messages=None,
 ):
     """
     Returns ``{"questions": [...]}`` for unresolved intent fields, unresolved
@@ -263,16 +294,22 @@ def gen_followup(
         )
     else:
         flags = _unanswered_flags(d)
+    _dbg("previous_questions", previous_questions or [])
+    _dbg("prior_user_messages", prior_user_messages or [])
     questions_blob = followup_questions_from_intent(
         intent,
         other_flags=flags,
         model=model,
         previous_questions=previous_questions,
+        prior_user_messages=prior_user_messages,
     )
+    raw_questions = _questions_blob_to_list(questions_blob)
+    _dbg("model returned", raw_questions)
     questions = _dedupe_questions(
-        _questions_blob_to_list(questions_blob),
+        raw_questions,
         list(previous_questions) if previous_questions else [],
     )
+    _dbg("after dedupe", questions)
 
     if merged_intent_out is not None:
         merged = dict(d)
