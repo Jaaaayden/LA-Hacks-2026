@@ -253,6 +253,17 @@ export default function Intake() {
       setResumingId(entry.id);
       setError(null);
 
+      const resumeRoute = (nextEntry, shoppingListId) => {
+        const route = nextEntry.route || "";
+        if (
+          shoppingListId &&
+          (route === `/pick/${shoppingListId}` || route === `/active/${shoppingListId}`)
+        ) {
+          return route;
+        }
+        return shoppingListId ? `/kit/${shoppingListId}` : route;
+      };
+
       const applyEntry = (nextEntry, route) => {
         setQueryText(nextEntry.queryText || "");
         setQueryId(nextEntry.queryId || null);
@@ -263,7 +274,7 @@ export default function Intake() {
         setFollowupQuestions(nextEntry.followupQuestions || []);
         setFollowupAnswers(nextEntry.followupAnswers || {});
         setKit(nextEntry.kit || null);
-        setPicks({});
+        setPicks(nextEntry.picks || nextEntry.picker?.picks || {});
         navigate(route || nextEntry.route || `/kit/${nextEntry.id}`);
       };
 
@@ -276,7 +287,7 @@ export default function Intake() {
             const freshEntry = {
               ...entry,
               id: shoppingListId,
-              route: `/kit/${shoppingListId}`,
+              route: resumeRoute(entry, shoppingListId),
               queryId: entry.queryId,
               shoppingListId,
               queryText: query.raw_messages?.[0] || entry.queryText || "",
@@ -297,6 +308,8 @@ export default function Intake() {
               followupQuestions: [],
               followupAnswers: entry.followupAnswers || {},
               kit: { ...shoppingList, kit_id: shoppingListId },
+              picks: entry.picks || entry.picker?.picks || {},
+              picker: entry.picker || null,
               status: query.status,
             };
             saveKit(freshEntry);
@@ -339,7 +352,7 @@ export default function Intake() {
           const freshEntry = {
             ...entry,
             id: shoppingListId,
-            route: `/kit/${shoppingListId}`,
+            route: resumeRoute(entry, shoppingListId),
             queryId: shoppingList.query_id || entry.queryId || null,
             shoppingListId,
             detectedHobby: shoppingList.hobby,
@@ -347,6 +360,8 @@ export default function Intake() {
             hobby: shoppingList.hobby,
             budget_usd: shoppingList.budget_usd,
             kit: { ...shoppingList, kit_id: shoppingListId },
+            picks: entry.picks || entry.picker?.picks || {},
+            picker: entry.picker || null,
           };
           saveKit(freshEntry);
           setSavedKits(listSavedKits());

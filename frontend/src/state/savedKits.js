@@ -41,14 +41,33 @@ export function getSavedKit(id) {
 
 export function saveKit(entry) {
   if (!entry?.id || !isBackendBacked(entry)) return;
-  const existing = readAll().filter(
+  const all = readAll();
+  const previous = all.find(
+    (k) =>
+      k.id === entry.id ||
+      (entry.queryId && k.queryId === entry.queryId) ||
+      (entry.shoppingListId && k.shoppingListId === entry.shoppingListId),
+  );
+  const existing = all.filter(
     (k) =>
       k.id !== entry.id &&
       (!entry.queryId || k.queryId !== entry.queryId) &&
       (!entry.shoppingListId || k.shoppingListId !== entry.shoppingListId),
   );
+  const hasPickerProgress = Boolean(entry.picker || entry.picks);
+  const preservedRoute =
+    !hasPickerProgress && previous?.picker && previous.route
+      ? previous.route
+      : entry.route;
+  const merged = {
+    ...previous,
+    ...entry,
+    route: preservedRoute,
+    picks: entry.picks || previous?.picks || previous?.picker?.picks,
+    picker: entry.picker || previous?.picker,
+  };
   const next = [
-    { ...entry, savedAt: entry.savedAt || Date.now() },
+    { ...merged, savedAt: entry.savedAt || Date.now() },
     ...existing,
   ].slice(0, MAX_ENTRIES);
   writeAll(next);

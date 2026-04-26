@@ -43,6 +43,87 @@
   color: var(--ink);
 }
 
+.controlBtn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.controlBtn:disabled:hover {
+  color: var(--ink-muted);
+}
+
+.itemNavWrap {
+  margin: -2px 0 22px;
+  padding: 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.itemNavLabel {
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.itemNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.itemNavBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.itemNavBtn:hover {
+  border-color: var(--ink-muted);
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.itemNavBtn[data-active="true"] {
+  border-color: var(--ink-muted);
+  background: var(--surface-soft);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink-muted), var(--shadow-sm);
+}
+
+.itemNavCount {
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--ink-muted);
+  color: var(--surface);
+  font-size: 11px;
+}
+
+.itemNavBtn[data-active="true"] .itemNavCount {
+  background: var(--ink-muted);
+  color: var(--surface);
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -141,7 +222,7 @@
 }
 
 .cardSelected {
-  border-color: var(--ink);
+  border-color: var(--ink-muted);
   box-shadow: var(--shadow);
   transform: translateY(-2px);
 }
@@ -150,7 +231,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--ink-muted);
   border-radius: inherit;
   pointer-events: none;
   z-index: 1;
@@ -272,7 +353,7 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--ink);
+  background: var(--ink-muted);
   color: var(--surface);
   display: inline-flex;
   align-items: center;

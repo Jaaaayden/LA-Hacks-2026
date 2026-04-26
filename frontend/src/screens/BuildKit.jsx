@@ -287,6 +287,23 @@ export default function BuildKit() {
 
     try {
       await api.startSearch(listId);
+      saveKit({
+        id: listId,
+        route: `/pick/${listId}`,
+        hobby: kit.hobby,
+        budget_usd: kit.budget_usd,
+        queryText,
+        queryId: queryId || kit.query_id || null,
+        shoppingListId: listId,
+        parsedIntent,
+        detectedHobby,
+        detectedBudget,
+        followupQuestions,
+        followupAnswers,
+        kit,
+        picks: {},
+        picker: { slotIndex: 0, picks: {}, updatedAt: Date.now() },
+      });
       navigate(`/pick/${listId}`);
     } catch (e) {
       console.warn("[shopping-lists] search failed:", e.message);
