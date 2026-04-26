@@ -108,11 +108,12 @@ export default function Picker() {
         </div>
 
         <div className={styles.grid}>
-          {candidates.map((c) => {
+          {candidates.map((c, idx) => {
             const selected = selectedIds.includes(c.listing_id);
             return (
               <div
                 key={c.listing_id}
+                style={{ animationDelay: `${idx * 60}ms` }}
                 className={[
                   styles.card,
                   selected && styles.cardSelected,

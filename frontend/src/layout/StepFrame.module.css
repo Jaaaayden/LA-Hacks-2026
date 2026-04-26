@@ -9,9 +9,34 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24px 40px;
+  padding: 22px 40px;
   font-size: 13px;
   color: var(--ink-muted);
+}
+
+.headerLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-brand);
+  font-style: italic;
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  line-height: 1;
+  cursor: pointer;
+  transition: color 200ms ease;
+  padding-bottom: 2px;
+}
+
+.brand:hover {
+  color: var(--chip-accent);
 }
 
 .back {
@@ -21,6 +46,9 @@
   font-size: 13px;
   color: var(--ink-muted);
   padding: 6px 4px;
+  border-left: 1px solid var(--border);
+  padding-left: 18px;
+  transition: color 120ms ease;
 }
 
 .back:hover {
@@ -39,4 +67,22 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  animation: stepEnter 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes stepEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .body {
+    animation: none;
+  }
 }

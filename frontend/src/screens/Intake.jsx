@@ -1,11 +1,13 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StepFrame from "../layout/StepFrame.jsx";
 import Button from "../primitives/Button.jsx";
+import Spinner from "../primitives/Spinner.jsx";
 import { ArrowRightIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
 import { api } from "../api/client.js";
 import { canonicalHobby } from "../data/mocks.js";
+import { listSavedKits, deleteSavedKit } from "../state/savedKits.js";
 import styles from "./Intake.module.css";
 
 const HOBBY_WORDS = [
@@ -141,6 +143,45 @@ export default function Intake() {
   const editorRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [savedKits, setSavedKits] = useState([]);
+
+  useEffect(() => {
+    setSavedKits(listSavedKits());
+  }, []);
+
+  const resume = useCallback(
+    (entry) => {
+      setQueryText(entry.queryText || "");
+      setQueryId(entry.queryId || null);
+      setShoppingListId(entry.shoppingListId || null);
+      setParsedIntent(entry.parsedIntent || null);
+      setDetectedHobby(entry.detectedHobby || entry.hobby || null);
+      setDetectedBudget(entry.detectedBudget ?? entry.budget_usd ?? null);
+      setFollowupQuestions(entry.followupQuestions || []);
+      setFollowupAnswers(entry.followupAnswers || {});
+      setKit(entry.kit || null);
+      setPicks({});
+      navigate(`/kit/${entry.id}`);
+    },
+    [
+      navigate,
+      setDetectedBudget,
+      setDetectedHobby,
+      setFollowupAnswers,
+      setFollowupQuestions,
+      setKit,
+      setParsedIntent,
+      setPicks,
+      setQueryId,
+      setQueryText,
+      setShoppingListId,
+    ],
+  );
+
+  const removeSaved = useCallback((id) => {
+    deleteSavedKit(id);
+    setSavedKits(listSavedKits());
+  }, []);
 
   const onInput = useCallback(() => {
     const el = editorRef.current;
@@ -236,15 +277,83 @@ export default function Intake() {
             <Button
               onClick={submit}
               disabled={busy}
-              iconEnd={<ArrowRightIcon />}
+              iconEnd={busy ? <Spinner size={14} /> : <ArrowRightIcon />}
             >
-              {busy ? "Sending…" : "Send"}
+              {busy ? "Reading your brief" : "Send"}
             </Button>
           </div>
 
           {error && <div className={styles.error}>{error}</div>}
+
+          {savedKits.length > 0 && (
+            <section className={styles.saved}>
+              <div className={styles.savedHeader}>
+                <span className={styles.savedLabel}>Pick up where you left off</span>
+                <span className={styles.savedCount}>{savedKits.length} saved</span>
+              </div>
+              <div className={styles.savedList}>
+                {savedKits.map((entry, idx) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className={styles.savedItem}
+                    style={{ animationDelay: `${idx * 50}ms` }}
+                    onClick={() => resume(entry)}
+                  >
+                    <div className={styles.savedItemMain}>
+                      <div className={styles.savedItemTitle}>
+                        {String(entry.hobby || "kit").replace(/^./, (c) => c.toUpperCase())}
+                        {entry.budget_usd != null && (
+                          <span className={styles.savedItemBudget}> · ${entry.budget_usd}</span>
+                        )}
+                      </div>
+                      {entry.queryText && (
+                        <div className={styles.savedItemQuery}>{entry.queryText}</div>
+                      )}
+                    </div>
+                    <div className={styles.savedItemRight}>
+                      <span className={styles.savedItemDate}>{relativeTime(entry.savedAt)}</span>
+                      <span
+                        className={styles.savedItemRemove}
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeSaved(entry.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeSaved(entry.id);
+                          }
+                        }}
+                        aria-label="Remove saved search"
+                      >
+                        ×
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </StepFrame>
   );
+}
+
+function relativeTime(ts) {
+  if (!ts) return "";
+  const diff = Date.now() - ts;
+  const min = Math.round(diff / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.round(hr / 24);
+  if (d < 7) return `${d}d ago`;
+  const w = Math.round(d / 7);
+  return `${w}w ago`;
 }

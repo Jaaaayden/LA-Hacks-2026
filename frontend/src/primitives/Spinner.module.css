@@ -1,0 +1,19 @@
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinner {
+  display: inline-block;
+  border-radius: 50%;
+  border-style: solid;
+  border-color: currentColor;
+  border-top-color: transparent;
+  animation: spin 720ms linear infinite;
+}
+
+.label {
+  font-size: inherit;
+  color: inherit;
+}

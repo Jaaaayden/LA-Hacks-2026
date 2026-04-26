@@ -2,6 +2,8 @@ import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import StepFrame from "../layout/StepFrame.jsx";
 import Button from "../primitives/Button.jsx";
+import Spinner from "../primitives/Spinner.jsx";
+import BuildingOverlay from "../primitives/BuildingOverlay.jsx";
 import { ArrowRightIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
 import { api } from "../api/client.js";
@@ -167,13 +169,18 @@ export default function Followup() {
             <span className={styles.shortcut}>
               <kbd>⌘↵</kbd> when done
             </span>
-            <Button onClick={submit} disabled={busy} iconEnd={<ArrowRightIcon />}>
-              {busy ? "Building…" : "Build my kit"}
+            <Button
+              onClick={submit}
+              disabled={busy}
+              iconEnd={busy ? <Spinner size={14} /> : <ArrowRightIcon />}
+            >
+              {busy ? "Building" : "Build my kit"}
             </Button>
           </div>
         </div>
         {error && <div className={styles.qRationale}>{error}</div>}
       </div>
+      {busy && <BuildingOverlay hobby={detectedHobby || parsedIntent?.parsed_intent?.hobby} />}
     </StepFrame>
   );
 }
