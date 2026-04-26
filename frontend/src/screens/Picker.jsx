@@ -60,11 +60,19 @@ export default function Picker() {
   const [slotIndex, setSlotIndex] = useState(0);
   const [candidatesByItem, setCandidatesByItem] = useState({});
   const [searchStatus, setSearchStatus] = useState(null);
-  const [loadError, setLoadError] = useState(null);
+  const [kitLoading, setKitLoading] = useState(!kit);
+  const [candidatesLoading, setCandidatesLoading] = useState(true);
+  const [kitError, setKitError] = useState(null);
+  const [candidateError, setCandidateError] = useState(null);
 
   useEffect(() => {
-    if (kit || !id) return undefined;
+    if (kit || !id) {
+      setKitLoading(false);
+      return undefined;
+    }
     let cancelled = false;
+    setKitLoading(true);
+    setKitError(null);
 
     api
       .getShoppingList(id)
@@ -73,11 +81,13 @@ export default function Picker() {
         setShoppingListId(id);
         if (shoppingList.query_id) setQueryId(shoppingList.query_id);
         setKit(normalizePickerKit(shoppingList, id));
+        setKitLoading(false);
       })
       .catch((err) => {
         if (!cancelled) {
           console.warn("[picker] load kit failed:", err.message);
-          setLoadError("Could not load this kit from the backend.");
+          setKitError("Could not load this kit from the backend.");
+          setKitLoading(false);
         }
       });
 
@@ -91,6 +101,7 @@ export default function Picker() {
     let cancelled = false;
 
     async function fetchCandidates() {
+      setCandidatesLoading(true);
       try {
         const [candidateData, statusData] = await Promise.all([
           api.getCandidates(id),
@@ -99,12 +110,14 @@ export default function Picker() {
         if (cancelled) return;
         setCandidatesByItem(candidateData || {});
         setSearchStatus(statusData);
-        setLoadError(null);
+        setCandidateError(null);
       } catch (err) {
         if (!cancelled) {
           console.warn("[picker] candidates failed:", err.message);
-          setLoadError("Could not load listing candidates from the backend.");
+          setCandidateError("Could not load listing candidates from the backend.");
         }
+      } finally {
+        if (!cancelled) setCandidatesLoading(false);
       }
     }
 
@@ -125,8 +138,47 @@ export default function Picker() {
   const item = activeItems[slotIndex];
   const currentSlot = item?.slot;
   const candidates = item?.id ? candidatesByItem[item.id] || [] : [];
-
   const selectedIds = picks[currentSlot] || [];
+  const progressLabel = searchStatus
+    ? `${searchStatus.items_done || 0} of ${searchStatus.items_total || activeItems.length} categories searched`
+    : null;
+  const searchIsRunning =
+    searchStatus?.status === "pending" || searchStatus?.status === "searching";
+  const searchIsOnCurrentItem =
+    item?.id && searchStatus?.current_item_id === item.id;
+  const currentItemName = item?.label || "items";
+  const itemNoun = currentItemName.toLowerCase();
+  const itemNounPlural = item?.slot === "snowboard" ? "boards" : itemNoun;
+  const stepLabel = activeItems.length
+    ? `Pick · ${Math.min(slotIndex + 1, activeItems.length)} of ${activeItems.length}`
+    : "Pick";
+  const emptyTitle = kitError
+    || candidateError
+    || (kitLoading
+      ? "Loading your kit..."
+      : !item
+        ? "No active items to pick from."
+        : searchStatus?.status === "error"
+          ? "Search hit an error."
+          : searchIsRunning
+            ? `Searching for ${itemNounPlural}...`
+            : `No ${itemNounPlural} found yet.`);
+  const emptyDetail = kitError
+    ? "Try going back to the kit builder and opening this search again."
+    : candidateError
+      ? "The page will keep retrying while you are here."
+      : kitLoading
+        ? "Getting the categories you chose before showing listings."
+        : !item
+          ? "Go back to the kit builder and check at least one item."
+          : searchStatus?.status === "error"
+            ? searchStatus.error || "The backend search job reported an error."
+            : searchIsRunning
+              ? searchIsOnCurrentItem
+                ? "OfferUp results will appear here as soon as this category is saved."
+                : `${titleize(searchStatus?.current_item_type || "another category")} is being searched now. This category is still waiting for results.`
+              : "You can skip this category and keep reviewing the rest of the kit.";
+  const disablePrimary = !item || selectedIds.length === 0;
 
   function toggle(listingId) {
     const next = selectedIds.includes(listingId)
@@ -159,44 +211,10 @@ export default function Picker() {
     advance();
   }
 
-  if (!item || candidates.length === 0) {
-    const searchIsRunning =
-      searchStatus?.status === "pending" || searchStatus?.status === "searching";
-    const message = loadError || (searchIsRunning
-      ? `Searching for ${item?.label || "listings"}... candidates will appear here as they are saved.`
-      : "No candidates found for this item yet. You can skip ahead for now.");
-
-    return (
-      <StepFrame step={4} label="Pick" showBack={false}>
-        <div
-          style={{
-            padding: "60px 40px",
-            textAlign: "center",
-            color: "var(--ink-muted)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 16,
-            alignItems: "center",
-          }}
-        >
-          <p>{message}</p>
-          <Button onClick={advance} iconEnd={<ArrowRightIcon />}>
-            {slotIndex + 1 < activeItems.length
-              ? "Skip · next slot"
-              : "Start hunting"}
-          </Button>
-        </div>
-      </StepFrame>
-    );
-  }
-
-  const itemNoun = item.label.toLowerCase();
-  const itemNounPlural = item.slot === "snowboard" ? "boards" : itemNoun;
-
   return (
     <StepFrame
       step={4}
-      label={`Pick · ${slotIndex + 1} of ${activeItems.length}`}
+      label={stepLabel}
       showBack={false}
     >
       <div className={styles.layout}>
@@ -207,7 +225,10 @@ export default function Picker() {
         </p>
 
         <div className={styles.controls}>
-          <span>{candidates.length} candidates</span>
+          <span>
+            {candidates.length} candidates
+            {progressLabel ? ` · ${progressLabel}` : ""}
+          </span>
           <div className={styles.controlsRight}>
             <button className={styles.controlBtn}>Best match ▾</button>
             <button className={styles.controlBtn}>Show 5 more</button>
@@ -215,6 +236,18 @@ export default function Picker() {
         </div>
 
         <div className={styles.grid}>
+          {candidates.length === 0 && (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyEyebrow}>
+                {candidatesLoading && searchIsRunning ? "Still checking" : "Picker status"}
+              </div>
+              <div className={styles.emptyTitle}>{emptyTitle}</div>
+              <div className={styles.emptyDetail}>{emptyDetail}</div>
+              {progressLabel && (
+                <div className={styles.emptyProgress}>{progressLabel}</div>
+              )}
+            </div>
+          )}
           {candidates.map((c, idx) => {
             const selected = selectedIds.includes(c.listing_id);
             return (
@@ -303,7 +336,7 @@ export default function Picker() {
           </button>
           <Button
             onClick={bargainAndAdvance}
-            disabled={selectedIds.length === 0}
+            disabled={disablePrimary}
             iconEnd={<ArrowRightIcon />}
           >
             {slotIndex + 1 < activeItems.length
