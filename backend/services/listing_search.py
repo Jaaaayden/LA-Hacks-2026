@@ -27,7 +27,7 @@ from backend.services.listing_store import parse_platform_id, upsert_scraped_lis
 from backend.services.offerup_graphql import resolve_location
 from backend.services.offerup_scraper import search_offerup
 
-DEFAULT_RESULTS_PER_ITEM = 30
+DEFAULT_RESULTS_PER_ITEM = 10
 _INTER_ITEM_DELAY_S = 2.5
 DEFAULT_SEARCH_LOCATION = "Los Angeles, CA"
 # Temporary kill-switches for in-progress recommender work.
