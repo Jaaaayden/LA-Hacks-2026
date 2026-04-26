@@ -1,5 +1,13 @@
 const BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
+class ApiError extends Error {
+  constructor(res, text) {
+    super(`${res.status} ${res.statusText}: ${text}`);
+    this.name = "ApiError";
+    this.status = res.status;
+  }
+}
+
 async function request(path, { method = "GET", body, signal } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -9,7 +17,7 @@ async function request(path, { method = "GET", body, signal } = {}) {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    throw new ApiError(res, text);
   }
   return res.json();
 }

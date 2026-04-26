@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StepFrame from "../layout/StepFrame.jsx";
 import Button from "../primitives/Button.jsx";
@@ -126,6 +126,30 @@ function parseClientSide(text) {
   return { hobby, budget_usd };
 }
 
+function isNotFoundError(error) {
+  return error?.status === 404 || /^404\b/.test(error?.message || "");
+}
+
+async function savedEntryExists(entry) {
+  try {
+    if (entry.queryId) {
+      const query = await api.getQuery(entry.queryId);
+      const shoppingListId = query.shopping_list_id || entry.shoppingListId;
+      if (shoppingListId) await api.getShoppingList(shoppingListId);
+      return true;
+    }
+
+    if (entry.shoppingListId || entry.id) {
+      await api.getShoppingList(entry.shoppingListId || entry.id);
+      return true;
+    }
+
+    return false;
+  } catch (e) {
+    return !isNotFoundError(e);
+  }
+}
+
 export default function Intake() {
   const navigate = useNavigate();
   const {
@@ -145,6 +169,34 @@ export default function Intake() {
   const [error, setError] = useState(null);
   const [savedKits, setSavedKits] = useState(() => listSavedKits());
   const [resumingId, setResumingId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function pruneDeletedSavedKits() {
+      const entries = listSavedKits();
+      if (entries.length === 0) return;
+
+      const checks = await Promise.all(
+        entries.map(async (entry) => ({
+          entry,
+          exists: await savedEntryExists(entry),
+        })),
+      );
+      if (cancelled) return;
+
+      const stale = checks.filter(({ exists }) => !exists);
+      if (stale.length === 0) return;
+
+      for (const { entry } of stale) deleteSavedKit(entry.id);
+      setSavedKits(listSavedKits());
+    }
+
+    pruneDeletedSavedKits();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const resume = useCallback(
     async (entry) => {
@@ -256,6 +308,13 @@ export default function Intake() {
         applyEntry(entry, entry.route);
       } catch (e) {
         console.warn("[queries] resume failed:", e.message);
+        if (isNotFoundError(e)) {
+          deleteSavedKit(entry.id);
+          setSavedKits(listSavedKits());
+          setError("That saved search no longer exists.");
+          return;
+        }
+
         if (entry.kit || entry.followupQuestions?.length) {
           applyEntry(entry, entry.route);
         } else {
