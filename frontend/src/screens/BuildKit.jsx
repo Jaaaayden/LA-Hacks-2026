@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import StepFrame from "../layout/StepFrame.jsx";
 import Button from "../primitives/Button.jsx";
 import { Chip, AddChip } from "../primitives/Chip.jsx";
-import ImageWithFallback from "../primitives/ImageWithFallback.jsx";
 import KitSkeleton from "../primitives/KitSkeleton.jsx";
 import { ArrowRightIcon, CheckIcon } from "../primitives/icons.jsx";
 import { useKit } from "../state/KitContext.jsx";
@@ -404,7 +403,6 @@ export default function BuildKit() {
                 {activeItems.map((it) => (
                   <div className={styles.willSearchRow} key={it.slot}>
                     <span className={styles.willSearchLeft}>
-                      <ImageWithFallback slot={it.slot} size={20} />
                       {it.label}
                     </span>
                     <span className={styles.willSearchPrice}>
@@ -483,8 +481,6 @@ function ItemRow({
 
   return (
     <div className={cls} style={{ animationDelay: `${index * 50}ms` }}>
-      <ImageWithFallback slot={item.slot} size={56} />
-
       <div className={styles.itemMain}>
         <div className={styles.itemTitle}>{item.label}</div>
         <div className={styles.prefRow}>
