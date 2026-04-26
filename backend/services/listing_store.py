@@ -76,6 +76,7 @@ def to_listing(
     image_url = scraped.get("imageUrl") or scraped.get("image_url")
     if image_url and not str(image_url).startswith("http"):
         image_url = None
+    image_path = scraped.get("image_path") or scraped.get("imagePath")
 
     resolved_hobby = hobby or infer_hobby(search_query)
     item_type = shopping_list_item_type or classify_item_type(
@@ -98,6 +99,7 @@ def to_listing(
             search_query=search_query,
             location=parse_location(scraped.get("location")),
             image_url=image_url,
+            image_path=image_path,
             scraped_at=scraped_at or datetime.now(timezone.utc),
             raw=scraped,
         )

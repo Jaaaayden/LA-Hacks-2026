@@ -19,15 +19,23 @@ import argparse
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 
+from browserbase import AsyncBrowserbase
 from dotenv import load_dotenv
+from playwright.async_api import async_playwright
 from pydantic import BaseModel
 from stagehand import AsyncStagehand
 
 load_dotenv()
 
 DEFAULT_MODEL = "anthropic/claude-sonnet-4-5"
+
+IMAGES_DIR = Path("scraper/output/images")
+DEFAULT_IMAGE_CAPTURE_LIMIT = 12
+
+_FB_ITEM_ID_RE = re.compile(r"/marketplace/item/(\d+)")
 
 
 class _ScrapedListing(BaseModel):
@@ -49,6 +57,60 @@ def _require_env(name: str) -> str:
     return val
 
 
+def _fb_id_from_url(url: str) -> str | None:
+    if not url:
+        return None
+    m = _FB_ITEM_ID_RE.search(url)
+    return m.group(1) if m else None
+
+
+async def _resolve_cdp_page(bb_api_key: str, session_id: str, browser):
+    """Find the active page on the connected CDP browser.
+
+    Returns a Playwright Page or None.
+    """
+    contexts = browser.contexts
+    if not contexts or not contexts[0].pages:
+        return None
+    return contexts[0].pages[-1]
+
+
+async def _capture_hero_image(
+    client: "AsyncStagehand",
+    session_id: str,
+    listing_url: str,
+    fb_id: str,
+    *,
+    images_dir: Path,
+    page,
+) -> str | None:
+    """Navigate to a listing detail page and save a viewport screenshot.
+
+    `page` is a persistent Playwright Page connected over CDP to the same
+    Browserbase session Stagehand is driving — reused across all listings to
+    avoid per-call connect/disconnect overhead.
+
+    Returns the local image path string on success, or None on failure.
+    """
+    img_path = images_dir / f"{fb_id}.png"
+    if img_path.exists():
+        return str(img_path)
+
+    try:
+        await client.sessions.navigate(session_id, url=listing_url)
+        await asyncio.sleep(2)
+
+        png_bytes = await page.screenshot(type="png", full_page=False)
+        if not png_bytes:
+            return None
+
+        img_path.write_bytes(png_bytes)
+        return str(img_path)
+    except Exception as e:
+        print(f"[scraper] screenshot failed for {fb_id}: {e}")
+        return None
+
+
 async def search_marketplace(
     query: str,
     *,
@@ -57,12 +119,16 @@ async def search_marketplace(
     max_results: int = 30,
     scrolls: int = 2,
     model_name: str = DEFAULT_MODEL,
+    capture_images: int = DEFAULT_IMAGE_CAPTURE_LIMIT,
 ) -> list[dict]:
     """Search FB Marketplace and return up to `max_results` listings as plain dicts.
 
-    Each listing dict has: title, price, location, url, image_url.
+    Each listing dict has: title, price, location, url, image_url, and (when
+    `capture_images > 0`) image_path.
     `image_url` may be a non-http garbage value (Stagehand bug) — the ingester
-    filters those to None at validation time.
+    filters those to None at validation time. `image_path` is the trustworthy
+    source for the frontend: the first `capture_images` listings are visited
+    individually and their hero photo downloaded to scraper/output/images/.
     """
     bb_api_key = _require_env("BROWSERBASE_API_KEY")
     bb_project_id = _require_env("BROWSERBASE_PROJECT_ID")
@@ -126,14 +192,51 @@ async def search_marketplace(
                 ),
                 schema=_ScrapedListings.model_json_schema(),
             )
+
+            response_dict = (
+                response.model_dump() if hasattr(response, "model_dump") else response
+            )
+            raw_listings = (
+                (response_dict.get("data") or {}).get("result", {}).get("listings", [])
+                or []
+            )
+            raw_listings = raw_listings[:max_results]
+
+            if capture_images > 0 and raw_listings:
+                IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+                async with AsyncBrowserbase(api_key=bb_api_key) as bb:
+                    urls = await bb.sessions.debug(session_id)
+                    ws_url = urls.ws_url
+
+                async with async_playwright() as p:
+                    browser = await p.chromium.connect_over_cdp(ws_url)
+                    try:
+                        page = await _resolve_cdp_page(bb_api_key, session_id, browser)
+                        if page is None:
+                            print("[scraper] CDP: no page found; skipping image capture")
+                        else:
+                            for listing in raw_listings[:capture_images]:
+                                fb_id = _fb_id_from_url(listing.get("url", ""))
+                                if not fb_id:
+                                    continue
+                                path = await _capture_hero_image(
+                                    client,
+                                    session_id,
+                                    listing["url"],
+                                    fb_id,
+                                    images_dir=IMAGES_DIR,
+                                    page=page,
+                                )
+                                if path:
+                                    listing["image_path"] = path
+                                await asyncio.sleep(1)
+                    finally:
+                        await browser.close()
         finally:
             await client.sessions.end(session_id)
 
-    response_dict = response.model_dump() if hasattr(response, "model_dump") else response
-    raw_listings = (
-        (response_dict.get("data") or {}).get("result", {}).get("listings", []) or []
-    )
-    return raw_listings[:max_results]
+    return raw_listings
 
 
 async def _main() -> None:
@@ -143,6 +246,12 @@ async def _main() -> None:
     parser.add_argument("--max-price", type=int, default=None, help="USD price ceiling")
     parser.add_argument("--max-results", type=int, default=30)
     parser.add_argument("--scrolls", type=int, default=2)
+    parser.add_argument(
+        "--capture-images",
+        type=int,
+        default=DEFAULT_IMAGE_CAPTURE_LIMIT,
+        help="Visit top N listings and save hero photos to scraper/output/images/ (0 to disable)",
+    )
     parser.add_argument("--save", default=None, help="Optional path to write JSON output")
     parser.add_argument(
         "--ingest",
@@ -163,6 +272,7 @@ async def _main() -> None:
         max_price=args.max_price,
         max_results=args.max_results,
         scrolls=args.scrolls,
+        capture_images=args.capture_images,
     )
     print(f"[scraper] got {len(listings)} listings")
 

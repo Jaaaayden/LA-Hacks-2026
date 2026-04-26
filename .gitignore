@@ -34,3 +34,6 @@ __pycache__/
 build/
 CLAUDE.md
 .gitignore
+
+# Scraper output
+scraper/output/images/
