@@ -306,6 +306,38 @@
   flex-wrap: wrap;
 }
 
+.fitBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fitBadge[data-fit="great"] {
+  background: color-mix(in srgb, var(--status-agreed) 15%, var(--surface));
+  color: var(--ink);
+}
+
+.fitBadge[data-fit="good"] {
+  background: color-mix(in srgb, var(--status-messaging) 18%, var(--surface));
+  color: var(--ink);
+}
+
+.fitBadge[data-fit="okay"] {
+  background: color-mix(in srgb, var(--status-just-found) 18%, var(--surface));
+  color: var(--ink);
+}
+
+.fitReason {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  line-height: 1.35;
+}
+
 .condDot {
   display: inline-block;
   width: 6px;

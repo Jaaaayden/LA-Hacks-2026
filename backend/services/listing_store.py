@@ -5,16 +5,19 @@ from typing import Any
 from backend.kitscout.db import listings
 from backend.kitscout.schemas import Listing, Location
 
-_OFFERUP_ID_RE = re.compile(r"/item/detail/([^/?#]+)")
+_OFFERUP_ID_RE = re.compile(r"/item/(?:detail/)?([^/?#]+)")
 
 
 def parse_platform_id(url: str) -> str | None:
-    """Extract the numeric item ID from an OfferUp listing URL."""
+    """Extract listing ID from an OfferUp URL or id-like string."""
     if not url:
         return None
     m = _OFFERUP_ID_RE.search(url)
     if m:
         return m.group(1)
+    cleaned = str(url).strip()
+    if cleaned and "/" not in cleaned and " " not in cleaned:
+        return cleaned
     return None
 
 
@@ -22,10 +25,10 @@ def parse_location(raw: str | dict[str, Any] | None) -> Location:
     if not raw:
         return Location()
     if isinstance(raw, dict):
-        name = raw.get("name") or raw.get("locationName")
+        name = raw.get("name") or raw.get("locationName") or raw.get("raw")
         return Location(
-            lat=raw.get("latitude"),
-            lng=raw.get("longitude"),
+            lat=_float_or_none(raw.get("latitude") or raw.get("lat")),
+            lng=_float_or_none(raw.get("longitude") or raw.get("lng")),
             raw=str(name) if name else None,
         )
     parts = [p.strip() for p in raw.split(",", 1)]
@@ -74,6 +77,46 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _price_or_zero(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, dict):
+        for key in ("amount", "value", "price"):
+            nested = value.get(key)
+            if nested is not None:
+                return _price_or_zero(nested)
+        return 0.0
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    lowered = text.lower()
+    if lowered == "free":
+        return 0.0
+    numeric = re.sub(r"[^0-9.]", "", text)
+    if not numeric:
+        return 0.0
+    try:
+        return float(numeric)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def to_listing(
     scraped: dict,
     *,
@@ -86,10 +129,21 @@ def to_listing(
     scraped_at: datetime | None = None,
     source: str | None = None,
 ) -> Listing | None:
-    url = scraped.get("url") or ""
-    platform_id = parse_platform_id(url)
+    raw_url = str(scraped.get("url") or "").strip()
+    raw_platform_id = (
+        scraped.get("platform_id")
+        or scraped.get("listing_id")
+        or scraped.get("listingId")
+        or scraped.get("id")
+    )
+    platform_id = (
+        str(raw_platform_id).strip()
+        if raw_platform_id is not None and str(raw_platform_id).strip()
+        else parse_platform_id(raw_url)
+    )
     if not platform_id:
         return None
+    url = raw_url or f"https://offerup.com/item/detail/{platform_id}"
 
     image_url = scraped.get("imageUrl") or scraped.get("image_url")
     if image_url and not str(image_url).startswith("http"):
@@ -104,14 +158,9 @@ def to_listing(
             source=source or "offerup",
             url=url,
             title=scraped.get("title") or "",
-            description=scraped.get("description"),
-            price_usd=float(scraped.get("price") or 0),
+            price_usd=_price_or_zero(scraped.get("price")),
             hobby=hobby or "unknown",
             item_type=item_type or "unknown",
-            condition=normalize_condition(
-                scraped.get("condition") or condition_code
-            ),
-            condition_code=str(condition_code) if condition_code is not None else None,
             query_id=query_id,
             list_id=list_id,
             item_id=item_id,
@@ -119,18 +168,7 @@ def to_listing(
             location=parse_location(location),
             image_url=image_url,
             image_path=image_path,
-            photos=_list_of_dicts(scraped.get("photos")),
-            post_date=_str_or_none(scraped.get("post_date")),
             scraped_at=scraped_at or datetime.now(timezone.utc),
-            original_price=_str_or_none(scraped.get("original_price")),
-            is_removed=scraped.get("is_removed"),
-            is_local=scraped.get("is_local"),
-            is_firm_on_price=scraped.get("is_firm_on_price"),
-            quantity=_int_or_none(scraped.get("quantity")),
-            seller=_dict_or_none(scraped.get("seller")),
-            category=_dict_or_none(scraped.get("category")),
-            fulfillment=_dict_or_none(scraped.get("fulfillment")),
-            distance=_dict_or_none(scraped.get("distance")),
             raw=scraped,
         )
     except Exception:

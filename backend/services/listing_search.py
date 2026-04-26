@@ -7,6 +7,7 @@ status for the frontend to poll while candidates stream into Mongo.
 
 import asyncio
 import math
+import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
@@ -20,24 +21,57 @@ from backend.kitscout.db import (
     shopping_lists,
 )
 from backend.kitscout.schemas import ListingSearchJob
-from backend.services.listing_attribute_extractor import extract_listing_attributes
-from backend.services.listing_ranker import rank_candidates_for_item
-from backend.services.listing_store import parse_platform_id, upsert_scraped_listings
+from backend.services.listing_store import upsert_scraped_listings
 from backend.services.offerup_graphql import resolve_location
 from backend.services.offerup_scraper import search_offerup
 
 DEFAULT_RESULTS_PER_ITEM = 30
 _INTER_ITEM_DELAY_S = 2.5
 DEFAULT_SEARCH_LOCATION = "Los Angeles, CA"
-# Temporary kill-switches for in-progress recommender work.
-ENABLE_RECOMMENDATION_RANKING = False
-ENABLE_LISTING_ATTRIBUTE_ANALYSIS = False
+ACTIVE_JOB_STALE_SECONDS = 180
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "at",
+    "be",
+    "for",
+    "from",
+    "i",
+    "in",
+    "is",
+    "it",
+    "my",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "with",
+}
 
 _active_lock = asyncio.Lock()
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _is_stale_active_job(existing: dict[str, Any]) -> bool:
+    status = str(existing.get("status") or "")
+    if status not in {"pending", "searching"}:
+        return False
+    started_at = existing.get("started_at")
+    if isinstance(started_at, datetime):
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+        age_seconds = (_now() - started_at).total_seconds()
+        return age_seconds >= ACTIVE_JOB_STALE_SECONDS
+    return True
 
 
 def _object_id(value: str) -> ObjectId:
@@ -145,20 +179,166 @@ def _distance_miles_for_doc(
     return _haversine_miles(center_lat, center_lng, lat, lng)
 
 
-def _candidate_sort_key(
+def _tokenize(text: str) -> set[str]:
+    tokens = _TOKEN_RE.findall((text or "").lower())
+    return {tok for tok in tokens if tok and tok not in _STOP_WORDS}
+
+
+def _query_context_text(query_doc: dict[str, Any] | None) -> str:
+    if not query_doc:
+        return ""
+
+    parts: list[str] = []
+    for message in query_doc.get("raw_messages") or []:
+        parts.append(str(message))
+
+    parsed_intent = query_doc.get("parsed_intent") or {}
+    if isinstance(parsed_intent, dict):
+        for key in ("raw_query", "hobby", "skill_level", "location"):
+            value = parsed_intent.get(key)
+            if value:
+                parts.append(str(value))
+
+    return " ".join(parts)
+
+
+def _shopping_item_text(item: dict[str, Any] | None) -> str:
+    if not item:
+        return ""
+
+    parts = [
+        str(item.get("item_type") or ""),
+        str(item.get("search_query") or ""),
+        str(item.get("notes") or ""),
+    ]
+    attributes = item.get("attributes") or []
+    if isinstance(attributes, list):
+        for attr in attributes:
+            if not isinstance(attr, dict):
+                continue
+            key = attr.get("key")
+            if key:
+                parts.append(str(key))
+            for value in attr.get("value") or []:
+                if isinstance(value, dict):
+                    raw = value.get("value")
+                    if raw:
+                        parts.append(str(raw))
+                elif value:
+                    parts.append(str(value))
+    return " ".join(parts)
+
+
+def _listing_text(doc: dict[str, Any]) -> str:
+    location = doc.get("location") or {}
+    location_raw = location.get("raw") if isinstance(location, dict) else ""
+    return " ".join(
+        [
+            str(doc.get("title") or ""),
+            str(doc.get("description") or ""),
+            str(doc.get("item_type") or ""),
+            str(location_raw or ""),
+        ]
+    )
+
+
+def _match_score(
+    *,
+    listing_tokens: set[str],
+    query_tokens: set[str],
+    item_tokens: set[str],
+) -> float:
+    if not listing_tokens:
+        return 0.0
+    if not query_tokens and not item_tokens:
+        return 0.5
+
+    query_hit = (
+        len(query_tokens & listing_tokens) / len(query_tokens)
+        if query_tokens
+        else 0.5
+    )
+    item_hit = (
+        len(item_tokens & listing_tokens) / len(item_tokens)
+        if item_tokens
+        else 0.5
+    )
+    score = 0.55 * query_hit + 0.45 * item_hit
+    return max(0.0, min(1.0, score))
+
+
+def _location_score(distance_miles: float | None) -> float:
+    if distance_miles is None:
+        return 0.45
+    if distance_miles <= 5:
+        return 1.0
+    if distance_miles <= 15:
+        return 0.85
+    if distance_miles <= 30:
+        return 0.7
+    if distance_miles <= 60:
+        return 0.5
+    if distance_miles <= 120:
+        return 0.3
+    return 0.1
+
+
+def _price_score(price_usd: float | None, budget_usd: float | None) -> float:
+    if price_usd is None or price_usd <= 0:
+        return 0.35
+    if budget_usd is None or budget_usd <= 0:
+        return 0.5
+
+    ratio = price_usd / budget_usd
+    if ratio <= 1:
+        # Strong preference for at/under budget.
+        return max(0.75, 1.0 - 0.25 * ratio)
+    if ratio <= 1.5:
+        # Soft penalty as listings go over budget.
+        return max(0.05, 0.75 - ((ratio - 1.0) / 0.5) * 0.7)
+    return 0.05
+
+
+def _attach_simple_rank(
     doc: dict[str, Any],
     *,
-    center_lat: float | None,
-    center_lng: float | None,
-) -> tuple[float, float]:
-    distance_miles = _distance_miles_for_doc(
-        doc,
-        center_lat=center_lat,
-        center_lng=center_lng,
+    query_tokens: set[str],
+    item_tokens: set[str],
+    item_budget_usd: float | None,
+) -> dict[str, Any]:
+    distance_miles = _as_float(doc.get("_computed_distance_miles"))
+    price_usd = _as_float(doc.get("price_usd"))
+    listing_tokens = _tokenize(_listing_text(doc))
+
+    match = _match_score(
+        listing_tokens=listing_tokens,
+        query_tokens=query_tokens,
+        item_tokens=item_tokens,
     )
-    distance_rank = distance_miles if distance_miles is not None else 1_000_000.0
-    price_rank = _as_float(doc.get("price_usd")) or 1_000_000.0
-    return (distance_rank, price_rank)
+    location = _location_score(distance_miles)
+    price = _price_score(price_usd, item_budget_usd)
+    overall = 0.35 * location + 0.3 * price + 0.35 * match
+
+    return {
+        **doc,
+        "_score_overall": round(overall, 4),
+        "_score_location": round(location, 4),
+        "_score_price": round(price, 4),
+        "_score_match": round(match, 4),
+    }
+
+
+def _rank_sort_key(doc: dict[str, Any]) -> tuple[float, float, float, float, float, float]:
+    distance_miles = _as_float(doc.get("_computed_distance_miles"))
+    price_usd = _as_float(doc.get("price_usd"))
+    return (
+        float(doc.get("_score_overall") or 0.0),
+        float(doc.get("_score_match") or 0.0),
+        float(doc.get("_score_location") or 0.0),
+        float(doc.get("_score_price") or 0.0),
+        -(distance_miles if distance_miles is not None else 1_000_000.0),
+        -(price_usd if price_usd is not None else 1_000_000.0),
+    )
 
 
 async def _resolve_search_center(
@@ -222,57 +402,14 @@ def _candidate_shape(
         "category": doc.get("category"),
         "fulfillment": doc.get("fulfillment"),
         "is_firm_on_price": doc.get("is_firm_on_price"),
-        "relevance": doc.get("relevance") or "uncertain",
-        "extracted_attributes": doc.get("extracted_attributes") or [],
-        "missing_fields": doc.get("missing_fields") or [],
-        "attribute_notes": doc.get("attribute_notes"),
-        "seller_questions": doc.get("seller_questions") or [],
+        "ranking": {
+            "overall": doc.get("_score_overall"),
+            "location": doc.get("_score_location"),
+            "price": doc.get("_score_price"),
+            "match": doc.get("_score_match"),
+        },
         "is_top_match": bool(doc.get("is_top_match")) if is_top_match is None else is_top_match,
     }
-
-
-async def _extract_and_store_listing_attributes(
-    scraped: list[dict[str, Any]],
-    *,
-    shopping_item: dict[str, Any],
-    hobby: str,
-) -> dict[str, int]:
-    if not scraped:
-        return {"analyzed": 0, "analysis_errors": 0}
-
-    try:
-        analyses = await asyncio.to_thread(
-            extract_listing_attributes,
-            scraped,
-            shopping_item=shopping_item,
-            hobby=hobby,
-        )
-    except Exception:
-        return {"analyzed": 0, "analysis_errors": len(scraped)}
-
-    analyzed = 0
-    for raw in scraped:
-        platform_id = parse_platform_id(str(raw.get("url") or ""))
-        if not platform_id:
-            continue
-        analysis = analyses.get(platform_id)
-        if not analysis:
-            continue
-        await listings.update_one(
-            {"platform_id": platform_id, "source": "offerup"},
-            {
-                "$set": {
-                    "relevance": analysis["relevance"],
-                    "extracted_attributes": analysis["extracted_attributes"],
-                    "missing_fields": analysis["missing_fields"],
-                    "seller_questions": analysis["seller_questions"],
-                    "attribute_notes": analysis["attribute_notes"],
-                }
-            },
-        )
-        analyzed += 1
-
-    return {"analyzed": analyzed, "analysis_errors": 0}
 
 
 async def start_search(
@@ -282,7 +419,7 @@ async def start_search(
 ) -> dict[str, Any]:
     """Create or return a background listing search job for a shopping list."""
     existing = await listing_search_jobs.find_one({"shopping_list_id": shopping_list_id})
-    if existing and existing.get("status") in {"pending", "searching"}:
+    if existing and existing.get("status") in {"pending", "searching"} and not _is_stale_active_job(existing):
         return _serialize(existing)
 
     shopping_list = await shopping_lists.find_one({"_id": _object_id(shopping_list_id)})
@@ -399,13 +536,6 @@ async def _run_search_job(
                     )
                     for key, value in counts.items():
                         totals[key] += value
-                    analysis_counts = await _extract_and_store_listing_attributes(
-                        scraped,
-                        shopping_item=item,
-                        hobby=hobby,
-                    )
-                    for key, value in analysis_counts.items():
-                        totals[key] += value
                 except Exception as exc:
                     totals["item_errors"] = totals.get("item_errors", 0) + 1
                     await listing_search_jobs.update_one(
@@ -462,7 +592,7 @@ async def get_search_status(shopping_list_id: str) -> dict[str, Any] | None:
 
 
 async def get_candidates(shopping_list_id: str) -> dict[str, list[dict[str, Any]]]:
-    """Return stored candidates grouped by item id, prioritized by location."""
+    """Return stored candidates grouped by item id using simple robust ranking."""
     shopping_list = await shopping_lists.find_one({"_id": _object_id(shopping_list_id)})
     if shopping_list is None:
         raise ValueError(f"Shopping list not found: {shopping_list_id}")
@@ -476,6 +606,7 @@ async def get_candidates(shopping_list_id: str) -> dict[str, list[dict[str, Any]
         query_doc.get("parsed_intent") if query_doc else None
     )
     _, center_lat, center_lng = await _resolve_search_center(intent_location)
+    query_tokens = _tokenize(_query_context_text(query_doc))
     items_by_id = {
         str(item.get("id")): item
         for item in shopping_list.get("items") or []
@@ -504,19 +635,20 @@ async def get_candidates(shopping_list_id: str) -> dict[str, list[dict[str, Any]
             )
 
         item = items_by_id.get(str(item_id))
-        if ENABLE_RECOMMENDATION_RANKING and item:
-            ranked_docs = await rank_candidates_for_item(item, docs_with_distance)
-        else:
-            ranked_docs = sorted(
-                docs_with_distance,
-                key=lambda doc: _candidate_sort_key(
-                    doc,
-                    center_lat=center_lat,
-                    center_lng=center_lng,
-                ),
+        item_budget_usd = _as_float(item.get("budget_usd")) if item else None
+        item_tokens = _tokenize(_shopping_item_text(item))
+        scored_docs = [
+            _attach_simple_rank(
+                doc,
+                query_tokens=query_tokens,
+                item_tokens=item_tokens,
+                item_budget_usd=item_budget_usd,
             )
-            if ranked_docs:
-                ranked_docs[0]["is_top_match"] = True
+            for doc in docs_with_distance
+        ]
+        ranked_docs = sorted(scored_docs, key=_rank_sort_key, reverse=True)
+        if ranked_docs:
+            ranked_docs[0]["is_top_match"] = True
 
         shaped: list[dict[str, Any]] = []
         for doc in ranked_docs:
