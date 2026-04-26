@@ -28,9 +28,23 @@ def _skeleton_for_model(skeleton: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in skeleton.items() if k != "raw_query"}
 
 
-def _tool_property_schema(key: str) -> dict[str, Any]:
-    """``other`` is reserved for hobby-specific flags (``gen_followup``), not the parser."""
+def _tool_property_schema(key: str, value: Any) -> dict[str, Any]:
+    """``other`` is reserved for follow-up flags, then fillable once flags exist."""
     if key == "other":
+        if isinstance(value, list):
+            return {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"},
+                        "label": {"type": "string"},
+                        "value": {},
+                    },
+                    "required": ["key", "label", "value"],
+                    "additionalProperties": False,
+                },
+            }
         return {"type": "null"}
     if key == "misc":
         return {
@@ -55,7 +69,7 @@ def _build_intent_tool(fillable: dict[str, Any]) -> dict[str, Any]:
         ),
         "input_schema": {
             "type": "object",
-            "properties": {k: _tool_property_schema(k) for k in keys},
+            "properties": {k: _tool_property_schema(k, fillable[k]) for k in keys},
             "required": keys,
             "additionalProperties": False,
         },
@@ -71,15 +85,21 @@ def _merge_intent_payload(
     skeleton: dict[str, Any],
     raw_query: str,
 ) -> dict[str, Any]:
-    """Overlay tool output onto ``skeleton``; unknown keys ignored; ``raw_query`` always set from ``text``."""
+    """Overlay tool output onto ``skeleton``; unknown keys ignored; append ``raw_query``."""
     out: dict[str, Any] = dict(skeleton)
     fillable = _skeleton_for_model(skeleton)
     for key in fillable:
         if key in tool_input:
             out[key] = tool_input[key]
-    if "other" in fillable:
+    if "other" in fillable and not isinstance(skeleton.get("other"), list):
         out["other"] = None
-    out["raw_query"] = raw_query
+    existing_raw = skeleton.get("raw_query")
+    if isinstance(existing_raw, list):
+        out["raw_query"] = [*existing_raw, raw_query]
+    elif existing_raw:
+        out["raw_query"] = [existing_raw, raw_query]
+    else:
+        out["raw_query"] = [raw_query]
     return out
 
 
@@ -100,7 +120,7 @@ def parse_intent(
     *,
     model: str = "claude-sonnet-4-5",
 ) -> dict[str, Any]:
-    """Fill ``skeleton`` from natural language via Claude. ``raw_query`` is always set to ``text``."""
+    """Fill ``skeleton`` from natural language via Claude. ``raw_query`` tracks all user messages."""
     fillable = _skeleton_for_model(skeleton)
     if not fillable:
         raise ValueError(

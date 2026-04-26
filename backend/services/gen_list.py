@@ -19,27 +19,64 @@ _SHOPPING_LIST_TOOL = {
             "budget_usd": {"type": ["number", "null"]},
             "items": {
                 "type": "array",
+                "minItems": 1,
                 "items": {
                     "type": "object",
                     "properties": {
                         "item_type": {"type": "string"},
+                        "search_query": {
+                            "type": "string",
+                            "description": (
+                                "Marketplace search phrase including the item type "
+                                "and the most important buying attributes."
+                            ),
+                        },
                         "required": {"type": "boolean"},
-                        "requirements": {
+                        "attributes": {
                             "type": "array",
+                            "description": (
+                                "Flexible key/value product specs needed to buy this item, "
+                                "such as species, size, style, compatibility, mount, "
+                                "material, capacity, or season rating."
+                            ),
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "key": {"type": "string"},
-                                    "label": {"type": "string"},
-                                    "value": {"type": "string"},
+                                    "key": {
+                                        "type": "string",
+                                        "description": "Short snake_case product spec name.",
+                                    },
+                                    "value": {
+                                        "type": "array",
+                                        "description": (
+                                            "One or more acceptable product spec values "
+                                            "to match in listings."
+                                        ),
+                                        "items": {
+                                            "type": "string",
+                                        },
+                                    },
+                                    "justification": {
+                                        "type": "string",
+                                        "description": (
+                                            "Brief reason why this attribute and its "
+                                            "values were chosen from the user's intent."
+                                        ),
+                                    },
                                 },
-                                "required": ["key", "label", "value"],
+                                "required": ["key", "value", "justification"],
                                 "additionalProperties": False,
                             },
                         },
                         "notes": {"type": ["string", "null"]},
                     },
-                    "required": ["item_type", "required", "requirements", "notes"],
+                    "required": [
+                        "item_type",
+                        "search_query",
+                        "required",
+                        "attributes",
+                        "notes",
+                    ],
                     "additionalProperties": False,
                 },
             },
@@ -48,6 +85,41 @@ _SHOPPING_LIST_TOOL = {
         "additionalProperties": False,
     },
 }
+
+
+def _validate_shopping_list(payload: dict[str, Any]) -> dict[str, Any]:
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        raise ValueError("Claude returned an incomplete shopping list: missing items")
+    return payload
+
+
+def _request_shopping_list(
+    client: Anthropic,
+    model: str,
+    system: str,
+    user_content: str,
+) -> dict[str, Any]:
+    msg = client.messages.create(
+        model=model,
+        max_tokens=2048,
+        system=system,
+        tools=[_SHOPPING_LIST_TOOL],
+        tool_choice={"type": "tool", "name": _SHOPPING_LIST_TOOL_NAME},
+        messages=[
+            {
+                "role": "user",
+                "content": user_content,
+            }
+        ],
+    )
+
+    for block in msg.content:
+        if block.type == "tool_use" and block.name == _SHOPPING_LIST_TOOL_NAME:
+            payload = block.input if isinstance(block.input, dict) else dict(block.input)
+            return _validate_shopping_list(payload)
+
+    raise ValueError("Claude did not return shopping list tool output.")
 
 
 def _as_dict(intent: str | dict[str, Any]) -> dict[str, Any]:
@@ -76,26 +148,18 @@ def gen_list(
         raise ValueError("ANTHROPIC_API_KEY is not set")
 
     client = Anthropic(api_key=key)
-    msg = client.messages.create(
-        model=model,
-        max_tokens=1024,
-        system=PROMPT_PATH.read_text(encoding="utf-8").strip(),
-        tools=[_SHOPPING_LIST_TOOL],
-        tool_choice={"type": "tool", "name": _SHOPPING_LIST_TOOL_NAME},
-        messages=[
-            {
-                "role": "user",
-                "content": "Intent JSON:\n" + json.dumps(d, indent=2),
-            }
-        ],
-    )
-
-    for block in msg.content:
-        if block.type == "tool_use" and block.name == _SHOPPING_LIST_TOOL_NAME:
-            payload = block.input if isinstance(block.input, dict) else dict(block.input)
-            return payload
-
-    raise ValueError("Claude did not return shopping list tool output.")
+    system = PROMPT_PATH.read_text(encoding="utf-8").strip()
+    user_content = "Intent JSON:\n" + json.dumps(d, indent=2)
+    try:
+        return _request_shopping_list(client, model, system, user_content)
+    except ValueError as exc:
+        retry_content = (
+            f"{user_content}\n\n"
+            f"Previous output was invalid: {exc}\n"
+            "Return the complete shopping list now. The top-level object must include "
+            "hobby, budget_usd, and a non-empty items array."
+        )
+        return _request_shopping_list(client, model, system, retry_content)
 
 
 if __name__ == "__main__":
