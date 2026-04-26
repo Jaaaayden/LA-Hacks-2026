@@ -31,6 +31,13 @@ _SHOPPING_LIST_TOOL = {
                                 "and the most important buying attributes."
                             ),
                         },
+                        "budget_usd": {
+                            "type": "number",
+                            "minimum": 0,
+                            "description": (
+                                "Target used-market budget allocated to this item in USD."
+                            ),
+                        },
                         "required": {"type": "boolean"},
                         "attributes": {
                             "type": "array",
@@ -82,6 +89,7 @@ _SHOPPING_LIST_TOOL = {
                     "required": [
                         "item_type",
                         "search_query",
+                        "budget_usd",
                         "required",
                         "attributes",
                         "notes",

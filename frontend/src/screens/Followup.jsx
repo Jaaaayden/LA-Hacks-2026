@@ -41,9 +41,13 @@ export default function Followup() {
     setShoppingListId,
     queryText,
     parsedIntent,
+    setParsedIntent,
     detectedHobby,
+    setDetectedHobby,
     detectedBudget,
+    setDetectedBudget,
     followupQuestions,
+    setFollowupQuestions,
     followupAnswers,
     setFollowupAnswers,
     setKit,
@@ -65,6 +69,15 @@ export default function Followup() {
       }),
     [detectedHobby, detectedBudget, parsedIntent, queryText],
   );
+
+  const progressNote = useMemo(() => {
+    const asked = parsedIntent?.questions_asked_count;
+    const max = parsedIntent?.max_followup_questions;
+    if (asked && max) {
+      return `Just a few more questions to dial in the kit. ${asked}/${max} max asked so far.`;
+    }
+    return "Just a few more questions to dial in the kit. If you don't know an answer, say so and I'll infer what I can.";
+  }, [parsedIntent]);
 
   const setAnswer = useCallback(
     (idx, val) => setFollowupAnswers({ ...followupAnswers, [idx]: val }),
@@ -88,12 +101,23 @@ export default function Followup() {
 
     try {
       const result = await api.answerQuery(id, followupText);
+      setParsedIntent(result);
+      if (result.parsed_intent?.hobby) setDetectedHobby(result.parsed_intent.hobby);
+      if (result.parsed_intent?.budget_usd != null)
+        setDetectedBudget(result.parsed_intent.budget_usd);
+
+      if (result.done === false) {
+        setFollowupQuestions(result.followup_questions || []);
+        setFollowupAnswers({});
+        return;
+      }
+
       setShoppingListId(result.shopping_list_id);
       setKit({ ...result.shopping_list, kit_id: result.shopping_list_id });
       navigate(`/kit/${result.shopping_list_id}`);
     } catch (e) {
       console.warn("[queries] answer failed:", e.message);
-      setError("Could not build this kit. Check that the backend is running.");
+      setError("Could not continue this kit. Check that the backend is running.");
     } finally {
       setBusy(false);
     }
@@ -102,7 +126,12 @@ export default function Followup() {
     displayQuestions,
     id,
     navigate,
+    setDetectedBudget,
+    setDetectedHobby,
+    setFollowupAnswers,
+    setFollowupQuestions,
     setKit,
+    setParsedIntent,
     setShoppingListId,
   ]);
 
@@ -134,6 +163,7 @@ export default function Followup() {
           A few quick clarifications so I can build the right kit for you.
           Answer in your own words — short or long, both work.
         </p>
+        <div className={styles.progressNote}>{progressNote}</div>
 
         <div className={styles.questions}>
           {displayQuestions.map((q, idx) => (
@@ -161,14 +191,14 @@ export default function Followup() {
 
         <div className={styles.actions}>
           <button className={styles.skipBtn} onClick={skip}>
-            Skip — go straight to the kit
+            Skip these questions
           </button>
           <div className={styles.actionsRight}>
             <span className={styles.shortcut}>
               <kbd>⌘↵</kbd> when done
             </span>
             <Button onClick={submit} disabled={busy} iconEnd={<ArrowRightIcon />}>
-              {busy ? "Building…" : "Build my kit"}
+              {busy ? "Thinking…" : "Continue"}
             </Button>
           </div>
         </div>

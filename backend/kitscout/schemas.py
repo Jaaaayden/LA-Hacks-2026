@@ -17,6 +17,7 @@ class Query(BaseModel):
     parsed_intent: dict[str, Any]
     status: Literal[
         "followups_ready",
+        "needs_followup",
         "shopping_list_created",
         "shopping_list_edited",
         "failed",
@@ -24,6 +25,9 @@ class Query(BaseModel):
     created_at: datetime
     updated_at: datetime
     followup_questions: list[str] = Field(default_factory=list)
+    followup_question_history: list[str] = Field(default_factory=list)
+    questions_asked_count: int = 0
+    max_followup_questions: int = 18
     shopping_list_id: str | None = None
     error: str | None = None
 
@@ -41,6 +45,7 @@ class ShoppingListAttribute(BaseModel):
 class ShoppingListItem(BaseModel):
     item_type: str
     search_query: str
+    budget_usd: float = 0.0
     required: bool
     attributes: list[ShoppingListAttribute] = Field(default_factory=list)
     notes: str | None = None

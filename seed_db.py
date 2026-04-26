@@ -76,6 +76,7 @@ async def main() -> None:
             ShoppingListItem(
                 item_type="snowboard",
                 search_query="beginner all-mountain snowboard",
+                budget_usd=140,
                 required=True,
                 attributes=[],
                 notes="Beginner-friendly all-mountain board.",
@@ -83,6 +84,7 @@ async def main() -> None:
             ShoppingListItem(
                 item_type="boots",
                 search_query="size 10 snowboard boots",
+                budget_usd=70,
                 required=True,
                 attributes=[],
                 notes=None,
@@ -90,6 +92,7 @@ async def main() -> None:
             ShoppingListItem(
                 item_type="helmet",
                 search_query="snowboard helmet",
+                budget_usd=40,
                 required=True,
                 attributes=[],
                 notes="Safety gear should be bought only if it is in good condition.",
