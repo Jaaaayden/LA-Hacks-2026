@@ -27,6 +27,7 @@ export const api = {
     request("/queries", { method: "POST", body: { user_text: userText } }),
   listQueries: (limit = 12) => request(`/queries?limit=${limit}`),
   getQuery: (queryId) => request(`/queries/${queryId}`),
+  deleteQuery: (queryId) => request(`/queries/${queryId}`, { method: "DELETE" }),
   answerQuery: (queryId, followupText) =>
     request(`/queries/${queryId}/answers`, {
       method: "POST",
@@ -34,6 +35,13 @@ export const api = {
     }),
   getShoppingList: (shoppingListId) =>
     request(`/shopping-lists/${shoppingListId}`),
+  deleteShoppingList: (shoppingListId) =>
+    request(`/shopping-lists/${shoppingListId}`, { method: "DELETE" }),
+  updateShoppingList: (shoppingListId, updates) =>
+    request(`/shopping-lists/${shoppingListId}`, {
+      method: "PATCH",
+      body: updates,
+    }),
   startSearch: (shoppingListId) =>
     request(`/shopping-lists/${shoppingListId}/search`, { method: "POST" }),
   getSearchStatus: (shoppingListId) =>

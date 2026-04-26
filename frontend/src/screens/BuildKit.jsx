@@ -79,6 +79,43 @@ function normalizeKit(kit, { fallbackHobby, fallbackBudget, fallbackId }) {
   };
 }
 
+function attributesFromPreferences(preferences = []) {
+  const grouped = new Map();
+
+  for (const pref of preferences) {
+    const rawValue = String(pref.value || "").trim();
+    if (!rawValue) continue;
+
+    const separator = rawValue.indexOf(": ");
+    const key = separator > 0 && !pref.custom ? rawValue.slice(0, separator) : "preference";
+    const value = separator > 0 && !pref.custom ? rawValue.slice(separator + 2) : rawValue;
+    const entries = grouped.get(key) || [];
+    entries.push({
+      value,
+      justification: pref.reason || "Added from kit editor.",
+    });
+    grouped.set(key, entries);
+  }
+
+  return Array.from(grouped, ([key, value]) => ({ key, value }));
+}
+
+function toShoppingListUpdate(kit) {
+  return {
+    hobby: kit.hobby,
+    budget_usd: kit.budget_usd,
+    items: (kit.items || []).map((item) => ({
+      id: item.id,
+      item_type: item.item_type || item.slot,
+      search_query: item.search_query || item.label || item.item_type || item.slot,
+      budget_usd: Number(item.budget_usd ?? item.price_usd) || 0,
+      required: Boolean(item.checked),
+      attributes: attributesFromPreferences(item.preferences),
+      notes: item.notes || null,
+    })),
+  };
+}
+
 export default function BuildKit() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -98,6 +135,9 @@ export default function BuildKit() {
   } = useKit();
   const customPrefSeq = useRef(0);
   const [loadError, setLoadError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
+  const [huntBusy, setHuntBusy] = useState(false);
+  const [huntError, setHuntError] = useState(null);
 
   // BuildKit's UI still uses the demo display shape. Normalize the backend
   // shopping-list schema here until the edit/PATCH step gets its own contract.
@@ -201,11 +241,18 @@ export default function BuildKit() {
   const activeItems = kit.items.filter((it) => it.checked);
 
   function patchItem(slot, patch) {
-    setKit({
+    const nextKit = {
       ...kit,
       items: kit.items.map((it) =>
         it.slot === slot ? { ...it, ...patch } : it,
       ),
+    };
+    setKit(nextKit);
+    setSaveError(null);
+
+    api.updateShoppingList(nextKit.kit_id || id, toShoppingListUpdate(nextKit)).catch((e) => {
+      console.warn("[shopping-lists] save failed:", e.message);
+      setSaveError("Could not save this kit edit to the backend.");
     });
   }
 
@@ -232,8 +279,21 @@ export default function BuildKit() {
     });
   }
 
-  function startHunt() {
-    navigate(`/pick/${kit.kit_id}`);
+  async function startHunt() {
+    if (huntBusy) return;
+    const listId = kit.kit_id || id;
+    setHuntBusy(true);
+    setHuntError(null);
+
+    try {
+      await api.startSearch(listId);
+      navigate(`/pick/${listId}`);
+    } catch (e) {
+      console.warn("[shopping-lists] search failed:", e.message);
+      setHuntError("Could not start listing search. Check that the backend is running.");
+    } finally {
+      setHuntBusy(false);
+    }
   }
 
   return (
@@ -249,6 +309,8 @@ export default function BuildKit() {
             Uncheck anything you already have — Hobbyist will only hunt for
             what's still on the list.
           </p>
+          {saveError && <div style={{ color: "var(--ink-muted)", marginBottom: 16 }}>{saveError}</div>}
+          {huntError && <div style={{ color: "var(--ink-muted)", marginBottom: 16 }}>{huntError}</div>}
 
           <div className={styles.sectionLabel}>Essential</div>
           <div className={styles.itemList}>
@@ -327,8 +389,12 @@ export default function BuildKit() {
             </div>
 
             <div className={styles.actions}>
-              <Button onClick={startHunt} iconEnd={<ArrowRightIcon />}>
-                Start hunting
+              <Button
+                onClick={startHunt}
+                disabled={huntBusy}
+                iconEnd={<ArrowRightIcon />}
+              >
+                {huntBusy ? "Starting search" : "Start hunting"}
               </Button>
               <button className={styles.saveLink}>Save for later</button>
             </div>
