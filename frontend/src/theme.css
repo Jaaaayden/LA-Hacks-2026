@@ -1,0 +1,51 @@
+:root {
+  /* surfaces */
+  --bg: #faf7f2;
+  --surface: #ffffff;
+  --surface-soft: #f3efe7;
+
+  /* ink */
+  --ink: #0f0f0f;
+  --ink-2: #2a2a2a;
+  --ink-muted: #6b6b6b;
+  --ink-soft: #a8a8a3;
+
+  /* lines */
+  --border: #e6e2d8;
+  --border-strong: #d4cfc1;
+
+  /* chips */
+  --chip-bg: #efece4;
+  --chip-bg-active: #e3def0;
+  --chip-ink: #2a2a2a;
+  --chip-accent: #6b5fc7;
+
+  /* status */
+  --status-negotiating: #dc2626;
+  --status-just-found: #d97706;
+  --status-agreed: #059669;
+  --status-messaging: #2563eb;
+  --top-match: #dc2626;
+
+  /* button */
+  --button-bg: #0f0f0f;
+  --button-fg: #ffffff;
+
+  /* radii */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+
+  /* fonts */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* sizing */
+  --container-max: 1200px;
+  --content-max: 880px;
+
+  /* shadow */
+  --shadow-sm: 0 1px 2px rgba(15, 15, 15, 0.04);
+  --shadow: 0 2px 8px rgba(15, 15, 15, 0.06);
+}

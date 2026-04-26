@@ -1,0 +1,234 @@
+import { useCallback, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import StepFrame from "../layout/StepFrame.jsx";
+import Button from "../primitives/Button.jsx";
+import { ArrowRightIcon } from "../primitives/icons.jsx";
+import { useKit } from "../state/KitContext.jsx";
+import { api } from "../api/client.js";
+import { canonicalHobby } from "../data/mocks.js";
+import styles from "./Intake.module.css";
+
+const HOBBY_WORDS = [
+  "snowboarding",
+  "snowboard",
+  "skating",
+  "skateboard",
+  "skateboarding",
+  "photography",
+  "pottery",
+  "bouldering",
+  "climbing",
+  "guitar",
+  "biking",
+  "mountain biking",
+  "running",
+  "yoga",
+];
+
+// Patterns we highlight inline (order matters: longer first).
+const PATTERNS = [
+  { name: "money", re: /\$\s?\d{1,6}(?:[.,]\d{1,2})?/g },
+  { name: "height", re: /\b\d['′]\s?\d{1,2}["″]?/g },
+  { name: "size", re: /\b(?:size\s)?\d{1,2}(?=\s?(?:boot|inch|in)\b)/gi },
+  {
+    name: "hobby",
+    re: new RegExp(`\\b(${HOBBY_WORDS.join("|")})\\b`, "gi"),
+  },
+];
+
+function highlightHTML(plain) {
+  if (!plain) return "";
+  // Find all matches across all patterns, then merge non-overlapping.
+  const matches = [];
+  for (const { re } of PATTERNS) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(plain))) {
+      matches.push({ start: m.index, end: m.index + m[0].length });
+    }
+  }
+  matches.sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const x of matches) {
+    const last = merged[merged.length - 1];
+    if (last && x.start < last.end) {
+      last.end = Math.max(last.end, x.end);
+    } else {
+      merged.push({ ...x });
+    }
+  }
+  let out = "";
+  let cursor = 0;
+  for (const m of merged) {
+    out += escapeHtml(plain.slice(cursor, m.start));
+    out += `<span class="${styles.entity}">${escapeHtml(plain.slice(m.start, m.end))}</span>`;
+    cursor = m.end;
+  }
+  out += escapeHtml(plain.slice(cursor));
+  return out;
+}
+
+function escapeHtml(s) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// Save/restore caret position across re-renders of the contenteditable.
+function getCaretOffset(el) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  const pre = range.cloneRange();
+  pre.selectNodeContents(el);
+  pre.setEnd(range.endContainer, range.endOffset);
+  return pre.toString().length;
+}
+
+function setCaretOffset(el, offset) {
+  if (offset == null) return;
+  const range = document.createRange();
+  const sel = window.getSelection();
+  let pos = 0;
+  let placed = false;
+
+  function walk(node) {
+    if (placed) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const next = pos + node.nodeValue.length;
+      if (offset <= next) {
+        range.setStart(node, offset - pos);
+        range.collapse(true);
+        placed = true;
+      } else {
+        pos = next;
+      }
+    } else {
+      for (const child of node.childNodes) walk(child);
+    }
+  }
+  walk(el);
+  if (!placed) {
+    range.selectNodeContents(el);
+    range.collapse(false);
+  }
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function parseClientSide(text) {
+  const hobby = canonicalHobby(text);
+  const moneyMatch = text.match(/\$\s?(\d{1,6})(?:[.,]\d{1,2})?/);
+  const budget_usd = moneyMatch ? Number(moneyMatch[1]) : null;
+  return { hobby, budget_usd };
+}
+
+export default function Intake() {
+  const navigate = useNavigate();
+  const {
+    setQueryText,
+    setParsedIntent,
+    setDetectedHobby,
+    setDetectedBudget,
+    setKit,
+  } = useKit();
+  const editorRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const onInput = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const text = el.innerText;
+    const caret = getCaretOffset(el);
+    el.innerHTML = highlightHTML(text);
+    setCaretOffset(el, caret);
+  }, []);
+
+  const submit = useCallback(async () => {
+    const el = editorRef.current;
+    if (!el) return;
+    const text = el.innerText.trim();
+    if (!text || busy) return;
+    setBusy(true);
+    setError(null);
+    setQueryText(text);
+
+    // Always run a client-side parse so the kit reacts to the brief even
+    // when the backend's offline. Backend response (when available) wins.
+    const local = parseClientSide(text);
+    setDetectedHobby(local.hobby);
+    setDetectedBudget(local.budget_usd);
+    // Force fresh kit on each submit so a new query rebuilds the kit.
+    setKit(null);
+
+    try {
+      const result = await api.parse(text);
+      setParsedIntent(result);
+      if (result.parsed_intent?.hobby) setDetectedHobby(result.parsed_intent.hobby);
+      if (result.parsed_intent?.budget_usd != null)
+        setDetectedBudget(result.parsed_intent.budget_usd);
+      const id = result.query_id || "mock-query-1";
+      navigate(`/kit/${id}`);
+    } catch (e) {
+      console.warn("[parse] backend offline, using client-side parse:", e.message);
+      navigate(`/kit/local-${Date.now()}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    busy,
+    navigate,
+    setKit,
+    setDetectedBudget,
+    setDetectedHobby,
+    setParsedIntent,
+    setQueryText,
+  ]);
+
+  const onKeyDown = useCallback(
+    (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        submit();
+      }
+    },
+    [submit],
+  );
+
+  return (
+    <StepFrame step={1} label="New search" showBack={false}>
+      <div className={styles.center}>
+        <div className={styles.inner}>
+          <h1 className={styles.headline}>What are you getting into?</h1>
+
+          <div
+            ref={editorRef}
+            className={styles.input}
+            contentEditable="true"
+            suppressContentEditableWarning
+            onInput={onInput}
+            onKeyDown={onKeyDown}
+            data-placeholder="I'm getting into snowboarding, budget $300, beginner, size 10 boot, 5'10&quot;."
+          />
+
+          <div className={styles.actions}>
+            <span className={styles.shortcut}>
+              <kbd>⌘↵</kbd> to send
+            </span>
+            <Button
+              onClick={submit}
+              disabled={busy}
+              iconEnd={<ArrowRightIcon />}
+            >
+              {busy ? "Sending…" : "Send"}
+            </Button>
+          </div>
+
+          {error && <div className={styles.error}>{error}</div>}
+        </div>
+      </div>
+    </StepFrame>
+  );
+}
