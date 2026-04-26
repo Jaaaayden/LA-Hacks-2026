@@ -1,14 +1,10 @@
-import { makeStagehand, requireEnv } from "./session.js";
+import { makeStagehand } from "./session.js";
 import { ListingsSchema } from "./schema.js";
 
 export async function searchFacebook(opts) {
   const { query, city, maxPrice, maxResults = 30, scrolls = 3 } = opts;
 
-  const stagehand = makeStagehand({
-    contextId: requireEnv("FB_CONTEXT_ID"),
-    persist: false,
-    proxies: false,
-  });
+  const stagehand = makeStagehand();
 
   await stagehand.init();
 
@@ -21,10 +17,27 @@ export async function searchFacebook(opts) {
     await page.goto(url, { timeoutMs: 60_000 });
     await page.waitForTimeout(3_000);
 
-    await stagehand.act("dismiss any login or cookie modal if present");
+    // Dismiss all popups (notifications, cookies, login modals)
+    const dismissSelectors = [
+      '[aria-label="Not Now"]',             // "Turn on notifications?" → Not Now
+      '[aria-label="Block"]',               // notification block button
+      '[aria-label="Close"]',               // generic close (X) button
+      '[aria-label="Decline optional cookies"]',
+      'div[role="dialog"] [aria-label="Close"]',
+    ];
+    for (const sel of dismissSelectors) {
+      try {
+        const btn = page.locator(sel).first();
+        if (await btn.isVisible({ timeout: 1000 })) {
+          await btn.click();
+          await page.waitForTimeout(500);
+        }
+      } catch (_) { /* not present, move on */ }
+    }
 
+    // Scroll with native JS instead of act() (deterministic, free)
     for (let i = 0; i < scrolls; i++) {
-      await stagehand.act("scroll down to load more marketplace listings");
+      await page.evaluate(() => window.scrollBy(0, 1500));
       await page.waitForTimeout(1_500 + Math.random() * 1_500);
     }
 

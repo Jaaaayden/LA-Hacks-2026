@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "fb:login": "node scripts/fb_login.js",
+    "fb:verify": "node scripts/fb_verify.js",
     "fb:scrape": "node scripts/run_scrape.js"
   },
   "dependencies": {
