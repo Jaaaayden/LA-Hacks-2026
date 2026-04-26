@@ -27,6 +27,7 @@ from backend.services.gen_negotiation_message import gen_negotiation_message
 
 MESSAGE_PAGE_CONCURRENCY = 3
 NEGOTIATION_POLL_INTERVAL_SECONDS = 60
+NEGOTIATION_TARGET_DISCOUNT_RATIO = 0.18
 
 _OFFERUP_BROWSER_LOCK = asyncio.Lock()
 _NEGOTIATION_POLL_TASKS: dict[str, asyncio.Task[None]] = {}
@@ -56,6 +57,24 @@ def _listing_token(listing_url: str) -> str:
 
 def _normalize_text(value: str) -> str:
     return " ".join(str(value or "").split()).strip().lower()
+
+
+def _effective_target_price(asking_price_usd: float, target_price_usd: float) -> float:
+    asking = max(0.0, float(asking_price_usd or 0))
+    budget = max(0.0, float(target_price_usd or 0))
+
+    if asking <= 0:
+        return round(budget, 2)
+
+    discounted_target = asking * (1 - NEGOTIATION_TARGET_DISCOUNT_RATIO)
+    target = discounted_target
+    if budget > 0:
+        target = min(target, budget)
+
+    if target >= asking and asking >= 5:
+        target = asking - 1
+
+    return round(max(0.0, target), 2)
 
 
 async def _prepare_offerup_chat(
@@ -414,12 +433,17 @@ async def _message_all_items(items_data: list[dict[str, Any]], out: queue.Queue)
                 async with semaphore:
                     page = await context.new_page()
                     try:
+                        asking_price = float(item_data["price_usd"])
+                        effective_target = _effective_target_price(
+                            asking_price,
+                            float(item_data["target_price_usd"]),
+                        )
                         result = await loop.run_in_executor(
                             None,
                             gen_negotiation_message,
                             item_data["title"],
-                            item_data["price_usd"],
-                            item_data["target_price_usd"],
+                            asking_price,
+                            effective_target,
                             [],
                         )
                         message = result.get("message") or ""
@@ -565,12 +589,17 @@ async def _poll_and_negotiate_items(items_data: list[dict[str, Any]], out: queue
 
                         conversation = list(item_data.get("conversation") or [])
                         conversation.append({"role": "seller", "content": seller_reply})
+                        asking_price = float(item_data["price_usd"])
+                        effective_target = _effective_target_price(
+                            asking_price,
+                            float(item_data["target_price_usd"]),
+                        )
                         result = await loop.run_in_executor(
                             None,
                             gen_negotiation_message,
                             item_data["title"],
-                            item_data["price_usd"],
-                            item_data["target_price_usd"],
+                            asking_price,
+                            effective_target,
                             conversation,
                         )
                         action = result.get("action", "give_up")
@@ -630,7 +659,10 @@ async def _run_poll_cycle(shopping_list_id: str) -> None:
                 "listing_id": listing_id,
                 "title": str(doc.get("title") or ""),
                 "price_usd": float(doc.get("price_usd") or 0),
-                "target_price_usd": float(doc.get("target_price_usd") or 0),
+                "target_price_usd": _effective_target_price(
+                    float(doc.get("price_usd") or 0),
+                    float(doc.get("target_price_usd") or 0),
+                ),
                 "url": url,
                 "conversation": list(doc.get("conversation") or []),
             }
@@ -830,6 +862,8 @@ async def add_to_bargain(
 
         location = doc.get("location") or {}
         location_raw = location.get("raw") if isinstance(location, dict) else None
+        asking_price = float(doc.get("price_usd") or 0)
+        effective_target = _effective_target_price(asking_price, target_price)
 
         bargain_doc = BargainItem(
             shopping_list_id=shopping_list_id,
@@ -837,8 +871,8 @@ async def add_to_bargain(
             item_type=item_type,
             listing_id=str(listing_id),
             title=str(doc.get("title") or ""),
-            price_usd=float(doc.get("price_usd") or 0),
-            target_price_usd=target_price,
+            price_usd=asking_price,
+            target_price_usd=effective_target,
             url=str(doc.get("url") or ""),
             image_url=doc.get("image_url"),
             location_raw=location_raw,

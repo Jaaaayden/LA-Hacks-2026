@@ -59,6 +59,7 @@ export default function Picker() {
   const { id } = useParams();
   const { kit, setKit, setQueryId, setShoppingListId, picks, setPicks } = useKit();
   const [slotIndex, setSlotIndex] = useState(() => getSavedKit(id)?.picker?.slotIndex || 0);
+  const [queueing, setQueueing] = useState(false);
   const [candidatesByItem, setCandidatesByItem] = useState({});
   const [searchStatus, setSearchStatus] = useState(null);
   const [kitLoading, setKitLoading] = useState(!kit);
@@ -227,7 +228,7 @@ export default function Picker() {
                   ? "OfferUp results will appear here as soon as this category is saved."
                   : `${titleize(searchStatus?.current_item_type || "another category")} is being searched now. This category is still waiting for results.`
                 : "You can skip this category and keep reviewing the rest of the kit.";
-  const disablePrimary = !item || selectedIds.length === 0;
+  const disablePrimary = !item || selectedIds.length === 0 || queueing;
 
   function toggle(listingId) {
     const next = selectedIds.includes(listingId)
@@ -244,15 +245,40 @@ export default function Picker() {
     }
   }
 
-  async function bargainAndAdvance() {
-    if (selectedIds.length > 0 && item?.id) {
-      try {
-        await api.addToBargain(id, item.id, selectedIds);
-      } catch (err) {
-        console.warn("[picker] addToBargain failed:", err.message);
-      }
+  async function queueAllSelectionsAndGo(nextPicks = picks) {
+    if (!id) {
+      navigate(`/active/${id}`);
+      return;
     }
-    advance();
+
+    const payloads = activeItems
+      .map((it) => ({
+        itemId: it.id,
+        listingIds: nextPicks[it.slot] || [],
+      }))
+      .filter((entry) => entry.itemId && entry.listingIds.length > 0);
+
+    setQueueing(true);
+    try {
+      await Promise.all(
+        payloads.map((entry) =>
+          api.addToBargain(id, entry.itemId, entry.listingIds),
+        ),
+      );
+    } catch (err) {
+      console.warn("[picker] queueAllSelections failed:", err.message);
+    } finally {
+      setQueueing(false);
+    }
+    navigate(`/active/${id}`);
+  }
+
+  async function bargainAndAdvance() {
+    if (slotIndex + 1 < activeItems.length) {
+      advance();
+      return;
+    }
+    await queueAllSelectionsAndGo(picks);
   }
 
   return (
@@ -403,9 +429,11 @@ export default function Picker() {
             disabled={disablePrimary}
             iconEnd={<ArrowRightIcon />}
           >
-            {slotIndex + 1 < activeItems.length
-              ? "Bargain on these"
-              : "Start hunting"}
+            {queueing
+              ? "Queueing..."
+              : slotIndex + 1 < activeItems.length
+                ? "Bargain on these"
+                : "Start hunting"}
           </Button>
         </div>
       </div>
