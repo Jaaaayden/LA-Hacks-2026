@@ -19,7 +19,9 @@ from backend.kitscout.db import (
     shopping_lists,
 )
 from backend.kitscout.schemas import ListingSearchJob
+from backend.services.listing_attribute_extractor import extract_listing_attributes
 from backend.services.listing_store import upsert_scraped_listings
+from backend.services.listing_store import parse_platform_id
 from backend.services.offerup_scraper import search_offerup
 
 DEFAULT_RESULTS_PER_ITEM = 30
@@ -104,10 +106,57 @@ def _candidate_shape(doc: dict[str, Any]) -> dict[str, Any]:
         "category": doc.get("category"),
         "fulfillment": doc.get("fulfillment"),
         "is_firm_on_price": doc.get("is_firm_on_price"),
+        "relevance": doc.get("relevance") or "uncertain",
+        "extracted_attributes": doc.get("extracted_attributes") or [],
         "missing_fields": doc.get("missing_fields") or [],
+        "attribute_notes": doc.get("attribute_notes"),
         "seller_questions": doc.get("seller_questions") or [],
         "is_top_match": False,
     }
+
+
+async def _extract_and_store_listing_attributes(
+    scraped: list[dict[str, Any]],
+    *,
+    shopping_item: dict[str, Any],
+    hobby: str,
+) -> dict[str, int]:
+    if not scraped:
+        return {"analyzed": 0, "analysis_errors": 0}
+
+    try:
+        analyses = await asyncio.to_thread(
+            extract_listing_attributes,
+            scraped,
+            shopping_item=shopping_item,
+            hobby=hobby,
+        )
+    except Exception:
+        return {"analyzed": 0, "analysis_errors": len(scraped)}
+
+    analyzed = 0
+    for raw in scraped:
+        platform_id = parse_platform_id(str(raw.get("url") or ""))
+        if not platform_id:
+            continue
+        analysis = analyses.get(platform_id)
+        if not analysis:
+            continue
+        await listings.update_one(
+            {"platform_id": platform_id, "source": "offerup"},
+            {
+                "$set": {
+                    "relevance": analysis["relevance"],
+                    "extracted_attributes": analysis["extracted_attributes"],
+                    "missing_fields": analysis["missing_fields"],
+                    "seller_questions": analysis["seller_questions"],
+                    "attribute_notes": analysis["attribute_notes"],
+                }
+            },
+        )
+        analyzed += 1
+
+    return {"analyzed": analyzed, "analysis_errors": 0}
 
 
 async def start_search(
@@ -220,6 +269,13 @@ async def _run_search_job(
                     source="offerup",
                 )
                 for key, value in counts.items():
+                    totals[key] += value
+                analysis_counts = await _extract_and_store_listing_attributes(
+                    scraped,
+                    shopping_item=item,
+                    hobby=hobby,
+                )
+                for key, value in analysis_counts.items():
                     totals[key] += value
 
                 await listing_search_jobs.update_one(

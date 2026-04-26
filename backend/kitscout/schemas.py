@@ -100,8 +100,10 @@ class Listing(BaseModel):
     category: dict[str, Any] | None = None
     fulfillment: dict[str, Any] | None = None
     distance: dict[str, Any] | None = None
+    relevance: Literal["relevant", "uncertain", "irrelevant"] = "uncertain"
     extracted_attributes: list[dict[str, Any]] = Field(default_factory=list)
     missing_fields: list[str] = Field(default_factory=list)
+    attribute_notes: str | None = None
     seller_questions: list[dict[str, Any]] = Field(default_factory=list)
     raw: dict[str, Any] = Field(default_factory=dict)
 
