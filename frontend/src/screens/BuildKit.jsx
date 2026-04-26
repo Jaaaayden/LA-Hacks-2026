@@ -9,20 +9,14 @@ import { useKit } from "../state/KitContext.jsx";
 import { buildKitFor } from "../data/mocks.js";
 import styles from "./BuildKit.module.css";
 
-function fmtRange([lo, hi]) {
-  return `$${lo}–$${hi}`;
+function fmtPrice(value) {
+  return `$${value}`;
 }
 
-function sumActiveRanges(items) {
+function sumActivePrices(items) {
   return items
     .filter((it) => it.checked)
-    .reduce(
-      (acc, it) => [
-        acc[0] + it.price_range_usd[0],
-        acc[1] + it.price_range_usd[1],
-      ],
-      [0, 0],
-    );
+    .reduce((acc, it) => acc + it.price_usd, 0);
 }
 
 export default function BuildKit() {
@@ -46,8 +40,8 @@ export default function BuildKit() {
 
   const [editingSlot, setEditingSlot] = useState(null);
 
-  const totalRange = useMemo(
-    () => (kit ? sumActiveRanges(kit.items) : [0, 0]),
+  const total = useMemo(
+    () => (kit ? sumActivePrices(kit.items) : 0),
     [kit],
   );
 
@@ -149,7 +143,7 @@ export default function BuildKit() {
             <div>
               <div className={styles.totalLabel}>Estimated total</div>
               <div className={styles.totalValue}>
-                {fmtRange(totalRange)}{" "}
+                {fmtPrice(total)}{" "}
                 <span className={styles.totalSub}>of ${kit.budget_usd}</span>
               </div>
             </div>
@@ -173,7 +167,7 @@ export default function BuildKit() {
                       {it.label}
                     </span>
                     <span className={styles.willSearchPrice}>
-                      {fmtRange(it.price_range_usd)}
+                      {fmtPrice(it.price_usd)}
                     </span>
                   </div>
                 ))}
@@ -202,25 +196,22 @@ function ItemRow({
   onRemovePref,
   onAddPref,
 }) {
-  const [draftLo, setDraftLo] = useState(item.price_range_usd[0]);
-  const [draftHi, setDraftHi] = useState(item.price_range_usd[1]);
+  const [draftPrice, setDraftPrice] = useState(item.price_usd);
   const [addingPref, setAddingPref] = useState(false);
   const [prefDraft, setPrefDraft] = useState("");
   const prefInputRef = useRef(null);
 
   useEffect(() => {
-    setDraftLo(item.price_range_usd[0]);
-    setDraftHi(item.price_range_usd[1]);
-  }, [item.price_range_usd]);
+    setDraftPrice(item.price_usd);
+  }, [item.price_usd]);
 
   useEffect(() => {
     if (addingPref) prefInputRef.current?.focus();
   }, [addingPref]);
 
   function commit() {
-    const lo = Math.max(0, Number(draftLo) || 0);
-    const hi = Math.max(lo, Number(draftHi) || lo);
-    onPatch({ price_range_usd: [lo, hi] });
+    const price = Math.max(0, Number(draftPrice) || 0);
+    onPatch({ price_usd: price });
     onEditClose();
   }
 
@@ -284,7 +275,7 @@ function ItemRow({
 
       <div className={styles.priceCol}>
         <span className={styles.priceVal}>
-          {fmtRange(item.price_range_usd)}
+          {fmtPrice(item.price_usd)}
         </span>
         <button
           type="button"
@@ -295,20 +286,13 @@ function ItemRow({
         </button>
         {editing && (
           <div className={styles.editor}>
-            <div className={styles.editorLabel}>Price range</div>
+            <div className={styles.editorLabel}>Price</div>
             <div className={styles.editorRow}>
               <input
                 className={styles.numberInput}
                 type="number"
-                value={draftLo}
-                onChange={(e) => setDraftLo(e.target.value)}
-                min={0}
-              />
-              <input
-                className={styles.numberInput}
-                type="number"
-                value={draftHi}
-                onChange={(e) => setDraftHi(e.target.value)}
+                value={draftPrice}
+                onChange={(e) => setDraftPrice(e.target.value)}
                 min={0}
               />
             </div>

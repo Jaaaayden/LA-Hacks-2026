@@ -13,7 +13,7 @@ const SNOWBOARDING_KIT = {
         { key: "type", value: "all-mountain", reason: "Best beginner profile — handles groomers and powder, forgiving on early turns." },
         { key: "flex", value: "soft-medium", reason: "Soft-medium flex is more forgiving while you're learning to control edges." },
       ],
-      price_range_usd: [80, 160],
+      price_usd: 120,
       default_checked: true,
     },
     {
@@ -24,7 +24,7 @@ const SNOWBOARDING_KIT = {
         { key: "size", value: "M/L", reason: "Sized to fit a size 10 boot." },
         { key: "compat", value: "fits boot 10", reason: "Cross-checked against the boot size you mentioned." },
       ],
-      price_range_usd: [30, 80],
+      price_usd: 55,
       default_checked: true,
     },
     {
@@ -35,7 +35,7 @@ const SNOWBOARDING_KIT = {
         { key: "size", value: "size 10", reason: "From the size you mentioned in your brief." },
         { key: "flex", value: "soft-medium", reason: "Comfort-first for a beginner who'll be on them all day." },
       ],
-      price_range_usd: [40, 90],
+      price_usd: 65,
       default_checked: true,
     },
     {
@@ -45,7 +45,7 @@ const SNOWBOARDING_KIT = {
       preferences: [
         { key: "feature", value: "MIPS preferred", reason: "MIPS adds rotational impact protection — recommended for new riders." },
       ],
-      price_range_usd: [20, 50],
+      price_usd: 35,
       default_checked: false,
     },
     {
@@ -55,7 +55,7 @@ const SNOWBOARDING_KIT = {
       preferences: [
         { key: "lens", value: "all-condition lens", reason: "One lens that handles bright and overcast days simplifies a starter kit." },
       ],
-      price_range_usd: [15, 40],
+      price_usd: 30,
       default_checked: true,
     },
     {
@@ -65,7 +65,7 @@ const SNOWBOARDING_KIT = {
       preferences: [
         { key: "feature", value: "waterproof", reason: "10k+ waterproof rating keeps you dry on resort snow." },
       ],
-      price_range_usd: [25, 70],
+      price_usd: 50,
       default_checked: true,
     },
     {
@@ -73,7 +73,7 @@ const SNOWBOARDING_KIT = {
       label: "Snow pants",
       category: "nice_to_have",
       preferences: [],
-      price_range_usd: [20, 60],
+      price_usd: 40,
       default_checked: true,
     },
   ],
@@ -91,7 +91,7 @@ const PHOTOGRAPHY_KIT = {
         { key: "type", value: "entry DSLR", reason: "Entry DSLRs (Canon Rebel, Nikon D3xxx) are the cheapest path into manual control." },
         { key: "shutter", value: "<20k actuations", reason: "Shutter count under 20k means most of the body's life is still ahead." },
       ],
-      price_range_usd: [180, 320],
+      price_usd: 250,
       default_checked: true,
     },
     {
@@ -102,7 +102,7 @@ const PHOTOGRAPHY_KIT = {
         { key: "type", value: "50mm prime", reason: "A nifty-fifty teaches composition before zoom habits set in." },
         { key: "aperture", value: "f/1.8 or wider", reason: "Wider apertures mean better low-light shots without a tripod." },
       ],
-      price_range_usd: [40, 120],
+      price_usd: 80,
       default_checked: true,
     },
     {
@@ -112,7 +112,7 @@ const PHOTOGRAPHY_KIT = {
       preferences: [
         { key: "size", value: "32GB+", reason: "Enough headroom for a full day of RAW photos without offloading." },
       ],
-      price_range_usd: [10, 25],
+      price_usd: 20,
       default_checked: true,
     },
     {
@@ -122,7 +122,7 @@ const PHOTOGRAPHY_KIT = {
       preferences: [
         { key: "type", value: "travel-size", reason: "Travel tripods fit a backpack — likelier you'll actually carry it." },
       ],
-      price_range_usd: [25, 80],
+      price_usd: 55,
       default_checked: true,
     },
     {
@@ -130,7 +130,7 @@ const PHOTOGRAPHY_KIT = {
       label: "Camera bag",
       category: "nice_to_have",
       preferences: [],
-      price_range_usd: [20, 60],
+      price_usd: 40,
       default_checked: true,
     },
   ],
@@ -148,7 +148,7 @@ const POTTERY_KIT = {
         { key: "type", value: "tabletop", reason: "Tabletop wheels are the cheapest second-hand entry point — splurge later." },
         { key: "motor", value: "1/3 hp+", reason: "Anything weaker bogs down on larger pieces." },
       ],
-      price_range_usd: [80, 180],
+      price_usd: 130,
       default_checked: true,
     },
     {
@@ -159,7 +159,7 @@ const POTTERY_KIT = {
         { key: "weight", value: "25 lb", reason: "Enough for ~10 small pieces while you're learning." },
         { key: "type", value: "low-fire", reason: "Low-fire is forgiving and most community kilns can fire it." },
       ],
-      price_range_usd: [15, 35],
+      price_usd: 25,
       default_checked: true,
     },
     {
@@ -169,7 +169,7 @@ const POTTERY_KIT = {
       preferences: [
         { key: "type", value: "starter set", reason: "A 10–12 piece set covers everything you'll touch in your first month." },
       ],
-      price_range_usd: [10, 25],
+      price_usd: 20,
       default_checked: true,
     },
     {
@@ -177,7 +177,7 @@ const POTTERY_KIT = {
       label: "Apron + towel",
       category: "nice_to_have",
       preferences: [],
-      price_range_usd: [10, 25],
+      price_usd: 20,
       default_checked: false,
     },
   ],
@@ -195,7 +195,7 @@ const GUITAR_KIT = {
         { key: "type", value: "dreadnought", reason: "Dreadnought is the most forgiving body shape for new players." },
         { key: "size", value: "full-size", reason: "Estimated from your build; smaller bodies feel cramped past month one." },
       ],
-      price_range_usd: [120, 220],
+      price_usd: 170,
       default_checked: true,
     },
     {
@@ -205,7 +205,7 @@ const GUITAR_KIT = {
       preferences: [
         { key: "type", value: "clip-on", reason: "Clip-on tuners ignore room noise and beat any phone app for accuracy." },
       ],
-      price_range_usd: [8, 20],
+      price_usd: 15,
       default_checked: true,
     },
     {
@@ -213,7 +213,7 @@ const GUITAR_KIT = {
       label: "Strap",
       category: "nice_to_have",
       preferences: [],
-      price_range_usd: [8, 25],
+      price_usd: 15,
       default_checked: true,
     },
   ],
@@ -230,7 +230,7 @@ const GENERIC_KIT = {
       preferences: [
         { key: "type", value: "beginner-friendly", reason: "Skewed toward forgiving entry-level gear that teaches good habits." },
       ],
-      price_range_usd: [100, 200],
+      price_usd: 150,
       default_checked: true,
     },
     {
@@ -238,7 +238,7 @@ const GENERIC_KIT = {
       label: "Supporting tools",
       category: "essential",
       preferences: [],
-      price_range_usd: [20, 60],
+      price_usd: 40,
       default_checked: true,
     },
     {
@@ -246,7 +246,7 @@ const GENERIC_KIT = {
       label: "Storage / bag",
       category: "nice_to_have",
       preferences: [],
-      price_range_usd: [15, 40],
+      price_usd: 30,
       default_checked: true,
     },
   ],
