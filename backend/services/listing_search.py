@@ -26,7 +26,7 @@ from backend.services.listing_store import upsert_scraped_listings
 from backend.services.offerup_graphql import resolve_location
 from backend.services.offerup_scraper import search_offerup
 
-DEFAULT_RESULTS_PER_ITEM = 30
+DEFAULT_RESULTS_PER_ITEM = 10
 _INTER_ITEM_DELAY_S = 2.5
 DEFAULT_SEARCH_LOCATION = "Los Angeles, CA"
 ACTIVE_JOB_STALE_SECONDS = 180
