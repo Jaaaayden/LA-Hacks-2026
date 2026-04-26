@@ -9,6 +9,8 @@ from backend.kitscout.schemas import ShoppingListItem
 from backend.services.query_flow import (
     complete_query_session,
     create_query_session,
+    delete_query_session,
+    delete_shopping_list_session,
     get_query_session,
     get_shopping_list,
     list_query_sessions,
@@ -88,6 +90,14 @@ async def read_query(query_id: str) -> dict[str, Any]:
     return query
 
 
+@app.delete("/queries/{query_id}")
+async def delete_query(query_id: str) -> dict[str, Any]:
+    try:
+        return await delete_query_session(query_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
 @app.post("/queries/{query_id}/answers")
 async def complete_query(
     query_id: str,
@@ -111,6 +121,14 @@ async def read_shopping_list(shopping_list_id: str) -> dict[str, Any]:
             detail=f"Shopping list not found: {shopping_list_id}",
         )
     return shopping_list
+
+
+@app.delete("/shopping-lists/{shopping_list_id}")
+async def delete_shopping_list(shopping_list_id: str) -> dict[str, Any]:
+    try:
+        return await delete_shopping_list_session(shopping_list_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
 
 
 @app.patch("/shopping-lists/{shopping_list_id}")

@@ -3,7 +3,13 @@ from typing import Any
 
 from bson import ObjectId
 
-from backend.kitscout.db import queries, shopping_lists
+from backend.kitscout.db import (
+    bargain_items,
+    listing_search_jobs,
+    listings,
+    queries,
+    shopping_lists,
+)
 from backend.kitscout.schemas import Query, ShoppingList
 from backend.services.gen_followup import gen_followup
 from backend.services.gen_list import gen_list
@@ -281,3 +287,102 @@ async def update_shopping_list(
     )
 
     return {"_id": shopping_list_id, **replacement}
+
+
+async def delete_query_session(query_id: str) -> dict[str, Any]:
+    """Delete a saved search and all DB records derived from it."""
+    oid = _object_id(query_id)
+    query = await queries.find_one({"_id": oid})
+    if query is None:
+        raise ValueError(f"Query not found: {query_id}")
+
+    shopping_list_ids: set[str] = set()
+    if query.get("shopping_list_id"):
+        shopping_list_ids.add(str(query["shopping_list_id"]))
+
+    cursor = shopping_lists.find({"query_id": query_id}, {"_id": 1})
+    async for doc in cursor:
+        shopping_list_ids.add(str(doc["_id"]))
+
+    list_id_filter = {"$in": list(shopping_list_ids)}
+    shopping_oids = [_object_id(value) for value in shopping_list_ids]
+
+    listings_filter: dict[str, Any]
+    if shopping_list_ids:
+        listings_filter = {
+            "$or": [
+                {"query_id": query_id},
+                {"list_id": list_id_filter},
+            ]
+        }
+    else:
+        listings_filter = {"query_id": query_id}
+
+    listings_result = await listings.delete_many(listings_filter)
+    search_jobs_result = (
+        await listing_search_jobs.delete_many({"shopping_list_id": list_id_filter})
+        if shopping_list_ids
+        else None
+    )
+    bargain_result = (
+        await bargain_items.delete_many({"shopping_list_id": list_id_filter})
+        if shopping_list_ids
+        else None
+    )
+    shopping_filter: dict[str, Any] = {"query_id": query_id}
+    if shopping_oids:
+        shopping_filter = {
+            "$or": [
+                {"query_id": query_id},
+                {"_id": {"$in": shopping_oids}},
+            ]
+        }
+    shopping_result = await shopping_lists.delete_many(shopping_filter)
+    query_result = await queries.delete_one({"_id": oid})
+
+    return {
+        "query_id": query_id,
+        "shopping_list_ids": list(shopping_list_ids),
+        "deleted": {
+            "queries": query_result.deleted_count,
+            "shopping_lists": shopping_result.deleted_count,
+            "listings": listings_result.deleted_count,
+            "listing_search_jobs": (
+                search_jobs_result.deleted_count if search_jobs_result else 0
+            ),
+            "bargain_items": bargain_result.deleted_count if bargain_result else 0,
+        },
+    }
+
+
+async def delete_shopping_list_session(shopping_list_id: str) -> dict[str, Any]:
+    """Delete a saved search starting from its shopping-list id."""
+    oid = _object_id(shopping_list_id)
+    shopping_list = await shopping_lists.find_one({"_id": oid})
+    if shopping_list is None:
+        raise ValueError(f"Shopping list not found: {shopping_list_id}")
+
+    query_id = shopping_list.get("query_id")
+    if query_id:
+        return await delete_query_session(str(query_id))
+
+    listings_result = await listings.delete_many({"list_id": shopping_list_id})
+    search_jobs_result = await listing_search_jobs.delete_many(
+        {"shopping_list_id": shopping_list_id}
+    )
+    bargain_result = await bargain_items.delete_many(
+        {"shopping_list_id": shopping_list_id}
+    )
+    shopping_result = await shopping_lists.delete_one({"_id": oid})
+
+    return {
+        "query_id": None,
+        "shopping_list_ids": [shopping_list_id],
+        "deleted": {
+            "queries": 0,
+            "shopping_lists": shopping_result.deleted_count,
+            "listings": listings_result.deleted_count,
+            "listing_search_jobs": search_jobs_result.deleted_count,
+            "bargain_items": bargain_result.deleted_count,
+        },
+    }

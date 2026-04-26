@@ -389,7 +389,24 @@ export default function Intake() {
     ],
   );
 
-  const removeSaved = useCallback((id) => {
+  const removeSaved = useCallback(async (entry) => {
+    const id = entry.id;
+    setError(null);
+
+    try {
+      if (entry.queryId) {
+        await api.deleteQuery(entry.queryId);
+      } else if (entry.shoppingListId || entry.id) {
+        await api.deleteShoppingList(entry.shoppingListId || entry.id);
+      }
+    } catch (e) {
+      if (!isNotFoundError(e)) {
+        console.warn("[queries] delete failed:", e.message);
+        setError("Could not delete this saved search from the backend.");
+        return;
+      }
+    }
+
     deleteSavedKit(id);
     setSavedKits(listSavedKits());
   }, []);
@@ -552,13 +569,13 @@ export default function Intake() {
                         tabIndex={0}
                         onClick={(e) => {
                           e.stopPropagation();
-                          removeSaved(entry.id);
+                          removeSaved(entry);
                         }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
                             e.stopPropagation();
-                            removeSaved(entry.id);
+                            removeSaved(entry);
                           }
                         }}
                         aria-label="Remove saved search"
