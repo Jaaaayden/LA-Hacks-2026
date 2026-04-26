@@ -53,6 +53,12 @@ def _needs_followup_questions(intent, other_flags):
     return _has_nulls(intent) or bool(flags)
 
 
+def _raw_query_text(raw_query):
+    if isinstance(raw_query, list):
+        return "\n".join(str(q) for q in raw_query if q)
+    return str(raw_query or "")
+
+
 def _questions_blob_to_list(text: str) -> list[str]:
     """Turn numbered LLM output into plain strings (one question per list item)."""
     t = (text or "").strip()
@@ -114,7 +120,7 @@ def suggest_other_flags_for_hobby(hobby, raw_query="", model="claude-sonnet-4-5"
 
     system = OTHER_FLAGS_PROMPT_PATH.read_text(encoding="utf-8").strip()
     user_parts = [f"Hobby: {h}"]
-    rq = (raw_query or "").strip()
+    rq = _raw_query_text(raw_query).strip()
     if rq:
         user_parts.append(f"User message:\n{rq}")
     user = "\n\n".join(user_parts)
