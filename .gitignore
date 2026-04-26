@@ -36,6 +36,6 @@ CLAUDE.md
 .gitignore
 
 # Scraper output
-scraper/output/images/
-scraper/output/debug/
+scraper/output/
 scraper/.chrome-profile/
+scraper/.chrome-profile-offerup/

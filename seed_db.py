@@ -109,39 +109,57 @@ async def main() -> None:
         {"$set": {"shopping_list_id": shopping_list_id}},
     )
 
+    def _listing(
+        platform_id: str,
+        title: str,
+        price: float,
+        item_type: str,
+        city: str,
+        search_query: str | None = None,
+    ) -> Listing:
+        return Listing(
+            platform_id=platform_id,
+            url=f"https://offerup.com/item/detail/{platform_id}/",
+            title=title,
+            price_usd=price,
+            hobby="snowboarding",
+            item_type=item_type,
+            query_id=query_id,
+            shopping_list_id=shopping_list_id,
+            shopping_list_item_type=item_type,
+            search_query=search_query or item_type,
+            location=Location(city=city, state="CA", raw=f"{city}, CA"),
+            scraped_at=_NOW,
+        )
+
+    # Two listings per common kit item so the agent has a choice and Pricer
+    # (Phase 4) has comps to score against. Item_types match the canonical
+    # set in listing_store._SNOWBOARDING_ITEMS so live-scrape data lines up
+    # with the seed schema once Browserbase comes online.
     sample_listings = [
-        Listing(
-            platform_id="2000000001",
-            url="https://offerup.com/item/detail/2000000001/",
-            title="K2 Standard Snowboard 152cm beginner",
-            price_usd=120,
-            hobby="snowboarding",
-            item_type="snowboard",
-            query_id=query_id,
-            shopping_list_id=shopping_list_id,
-            shopping_list_item_type="snowboard",
-            search_query="beginner all-mountain snowboard",
-            location=Location(city="Pasadena", state="CA", raw="Pasadena, CA"),
-            scraped_at=_NOW,
-        ),
-        Listing(
-            platform_id="2000000002",
-            url="https://offerup.com/item/detail/2000000002/",
-            title="Burton Moto Snowboard Boots size 10",
-            price_usd=45,
-            hobby="snowboarding",
-            item_type="boots",
-            query_id=query_id,
-            shopping_list_id=shopping_list_id,
-            shopping_list_item_type="boots",
-            search_query="size 10 snowboard boots",
-            location=Location(city="Long Beach", state="CA", raw="Long Beach, CA"),
-            scraped_at=_NOW,
-        ),
+        _listing("2000000001", "K2 Standard Snowboard 152cm beginner", 120, "snowboard", "Pasadena", "beginner all-mountain snowboard"),
+        _listing("2000000002", "Burton Custom 156 all-mountain", 180, "snowboard", "Santa Monica", "all-mountain snowboard"),
+
+        _listing("2000000010", "Burton Moto Snowboard Boots size 9", 45, "boots", "Long Beach", "size 9 snowboard boots"),
+        _listing("2000000011", "Salomon Faction boots size 10 like new", 80, "boots", "Burbank", "size 10 snowboard boots"),
+
+        _listing("2000000020", "Burton Mission bindings medium", 55, "bindings", "Glendale", "all-mountain snowboard bindings"),
+        _listing("2000000021", "Union Force bindings size L lightly used", 90, "bindings", "Culver City", "snowboard bindings large"),
+
+        _listing("2000000030", "Smith Holt snowboard helmet medium", 35, "helmet", "Hollywood", "snowboard helmet medium"),
+        _listing("2000000031", "Giro Ledge MIPS helmet large", 60, "helmet", "Westwood", "MIPS snowboard ski helmet"),
+
+        _listing("2000000040", "Anon Helix 2.0 snowboard goggles", 40, "goggles", "Venice", "snowboard goggles low light"),
+        _listing("2000000041", "Smith Squad XL goggles spare lens", 70, "goggles", "Silver Lake", "snowboard goggles two lens"),
+
+        _listing("2000000050", "Burton AK Gore-Tex jacket size M", 130, "jacket", "Echo Park", "snowboard jacket waterproof"),
+        _listing("2000000051", "686 Smarty 3-in-1 jacket size L", 95, "jacket", "Highland Park", "3-in-1 snowboard jacket"),
+
+        _listing("2000000060", "Burton Cargo snowboard pants size 32", 70, "pants", "Pasadena", "snowboard pants 10k waterproof"),
     ]
     await listings.insert_many([listing.model_dump() for listing in sample_listings])
 
-    print("inserted: 1 query, 1 shopping_list, 2 listings")
+    print(f"inserted: 1 query, 1 shopping_list, {len(sample_listings)} listings")
     for name, collection in {
         "queries": queries,
         "shopping_lists": shopping_lists,
